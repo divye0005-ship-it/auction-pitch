@@ -130,7 +130,13 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isValidUser(request.resource.data);
-      allow update: if isAuthenticated() && isValidUser(request.resource.data) && (isOwner(userId) || isAdmin());
+      allow update: if isAuthenticated() && (
+        (isOwner(userId) && isValidUser(request.resource.data)) || 
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['totalWinnings']) && 
+         request.resource.data.totalWinnings is number && 
+         request.resource.data.totalWinnings >= resource.data.totalWinnings) ||
+        isAdmin()
+      );
     }
 
     match /players/{playerId} {

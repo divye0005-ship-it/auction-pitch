@@ -594,8 +594,12 @@ const generatePlayers = (): Player[] => {
       });
     }
   });
-  
-  return generated;
+
+  // Final pass to ensure all players have at least 50 Lakhs base price
+  return generated.map(p => ({
+    ...p,
+    basePrice: Math.max(50, p.basePrice || 0)
+  }));
 };
 
 export const IPL_PLAYERS: Player[] = generatePlayers();
