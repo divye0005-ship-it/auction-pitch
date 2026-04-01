@@ -1,0 +1,157 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: uid
+    // Fields:
+    //   - uid: string (required)
+    //   - displayName: string (required)
+    //   - photoURL: string (optional)
+    //   - email: string (required)
+    //   - role: string (required, 'admin' or 'user')
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: players
+    // Document ID: playerId
+    // Fields:
+    //   - playerId: string (required)
+    //   - name: string (required)
+    //   - team: string (required)
+    //   - role: string (required)
+    //   - photoUrl: string (optional)
+    //   - country: string (required)
+    //   - stats: map (required)
+    //   - auctionScore: number (required)
+    //
+    // Collection: rooms
+    // Document ID: roomId (6-char code)
+    // Fields:
+    //   - roomId: string (required)
+    //   - hostId: string (required)
+    //   - status: string (required, 'waiting', 'active', 'finished')
+    //   - currentBidderId: string (optional)
+    //   - currentBidAmount: number (optional)
+    //   - currentPlayerId: string (optional)
+    //   - timerEnd: number (optional)
+    //   - players: map (required)
+    //   - squads: map (required)
+    //   - purses: map (required)
+    //   - auctionedPlayerIds: list (required)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: rooms/{roomId}/messages
+    // Document ID: messageId
+    // Fields:
+    //   - userId: string (required)
+    //   - userName: string (required)
+    //   - text: string (required)
+    //   - timestamp: timestamp (required)
+    //   - reactions: map (optional)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "divye64@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidEmail(email) {
+      return email is string &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasOnlyAllowedFields(['uid', 'displayName', 'photoURL', 'email', 'role', 'totalWinnings', 'createdAt']) &&
+             data.uid == request.auth.uid &&
+             data.displayName is string && data.displayName.size() > 0 && data.displayName.size() < 100 &&
+             isValidEmail(data.email) &&
+             data.role in ['admin', 'user'] &&
+             data.totalWinnings is number &&
+             (data.role == 'user' || isAdmin());
+    }
+
+    function isValidPlayer(data) {
+      return hasOnlyAllowedFields(['playerId', 'name', 'team', 'role', 'photoUrl', 'country', 'stats', 'auctionScore']) &&
+             data.playerId is string && data.name is string && data.team is string &&
+             data.role in ['Batter', 'Bowler', 'All-Rounder', 'Wicket-Keeper'] &&
+             data.auctionScore is number && data.auctionScore >= 0 && data.auctionScore <= 1000;
+    }
+
+    function isValidRoom(data) {
+      return hasOnlyAllowedFields(['roomId', 'hostId', 'status', 'currentBidderId', 'currentBidAmount', 'currentPlayerId', 'timerEnd', 'players', 'squads', 'purses', 'auctionedPlayerIds', 'createdAt', 'playersCount', 'revealTimer', 'isPublic', 'skipVotes']) &&
+             data.roomId is string && data.roomId.size() == 6 &&
+             data.hostId is string &&
+             data.status in ['waiting', 'active', 'finished'] &&
+             data.players is map &&
+             data.squads is map &&
+             data.purses is map &&
+             data.auctionedPlayerIds is list &&
+             data.playersCount is number &&
+             data.revealTimer is number &&
+             data.isPublic is bool &&
+             data.skipVotes is list;
+    }
+
+    function isValidMessage(data) {
+      return hasOnlyAllowedFields(['userId', 'userName', 'text', 'timestamp', 'reactions']) &&
+             data.userId == request.auth.uid &&
+             data.userName is string && data.text is string && data.text.size() < 500;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidUser(request.resource.data);
+      allow update: if isAuthenticated() && isValidUser(request.resource.data) && (isOwner(userId) || isAdmin());
+    }
+
+    match /players/{playerId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /rooms/{roomId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidRoom(request.resource.data);
+      allow update: if isAuthenticated() && (isAdmin() || isValidRoom(request.resource.data));
+      
+      match /messages/{messageId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && isValidMessage(request.resource.data);
+      }
+    }
+
+    // Default deny
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}

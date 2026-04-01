@@ -1,0 +1,89 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "email"]
+    },
+    "Player": {
+      "title": "Player",
+      "description": "IPL Player details.",
+      "type": "object",
+      "properties": {
+        "playerId": { "type": "string" },
+        "name": { "type": "string" },
+        "team": { "type": "string" },
+        "role": { "type": "string", "enum": ["Batter", "Bowler", "All-Rounder", "Wicket-Keeper"] },
+        "photoUrl": { "type": "string" },
+        "country": { "type": "string" },
+        "stats": { "type": "object" },
+        "auctionScore": { "type": "number" }
+      },
+      "required": ["playerId", "name", "team", "role", "auctionScore"]
+    },
+    "Room": {
+      "title": "Room",
+      "description": "Auction room state.",
+      "type": "object",
+      "properties": {
+        "roomId": { "type": "string" },
+        "hostId": { "type": "string" },
+        "playersCount": { "type": "number" },
+        "revealTimer": { "type": "number" },
+        "isPublic": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["waiting", "active", "finished"] },
+        "currentBidderId": { "type": "string" },
+        "currentBidAmount": { "type": "number" },
+        "currentPlayerId": { "type": "string" },
+        "timerEnd": { "type": "number" },
+        "players": { "type": "object" },
+        "squads": { "type": "object" },
+        "purses": { "type": "object" },
+        "auctionedPlayerIds": { "type": "array", "items": { "type": "string" } },
+        "skipVotes": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["roomId", "hostId", "status", "playersCount", "revealTimer", "isPublic", "players", "squads", "purses", "auctionedPlayerIds", "skipVotes"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Chat message in a room.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "reactions": { "type": "object" }
+      },
+      "required": ["userId", "userName", "text", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "User",
+      "description": "User profiles."
+    },
+    "/players/{playerId}": {
+      "schema": "Player",
+      "description": "Player database."
+    },
+    "/rooms/{roomId}": {
+      "schema": "Room",
+      "description": "Auction rooms."
+    },
+    "/rooms/{roomId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Room chat messages."
+    }
+  }
+}
