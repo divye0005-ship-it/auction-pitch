@@ -19,7 +19,14 @@ export default function App() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [userRank, setUserRank] = useState<number | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(true);
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(() => {
+    const saved = localStorage.getItem('ipl_auction_muted');
+    return saved ? JSON.parse(saved) : false;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('ipl_auction_muted', JSON.stringify(isMuted));
+  }, [isMuted]);
   const [joinCode, setJoinCode] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [createOptions, setCreateOptions] = useState({ players: 5, timer: 15, isPublic: true });

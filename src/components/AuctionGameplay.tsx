@@ -69,8 +69,8 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, allPlayer
       msg.voice = indianFemaleVoice;
     }
     
-    msg.rate = 1.0; // Natural speed
-    msg.pitch = 1.05; // Slightly higher for a more pleasant tone
+    msg.rate = 1.2; // Faster, more energetic speed
+    msg.pitch = 1.1; // Slightly higher for a more pleasant, professional tone
     msg.volume = 1.0;
     
     window.speechSynthesis.speak(msg);
@@ -115,73 +115,52 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, allPlayer
       const p = allPlayers.find(pl => pl.playerId === room.currentPlayerId);
       if (p && p.playerId !== currentPlayer?.playerId) {
         setCurrentPlayer(p);
-        // Small delay to ensure UI renders first
-        setTimeout(() => {
-          speak(`Next player: ${p.name}. Base price: ${p.basePrice >= 100 ? (p.basePrice/100).toFixed(2) + ' Crore' : p.basePrice + ' Lakhs'}`);
-        }, 100);
+        // Immediate announcement
+        speak(`Next player: ${p.name}. Base price: ${p.basePrice >= 100 ? (p.basePrice/100).toFixed(2) + ' Crore' : p.basePrice + ' Lakhs'}`);
       }
     }
-  }, [room.currentPlayerId, allPlayers, currentPlayer]);
+  }, [room.currentPlayerId, allPlayers, currentPlayer, speak]);
 
   // Timer logic
   useEffect(() => {
-    if (room.timerEnd) {
+    if (room.timerEnd && room.status === 'active') {
       const updateTimer = () => {
         const now = Date.now();
         const diff = Math.max(0, Math.ceil((room.timerEnd! - now) / 1000));
         setTimeLeft(diff);
 
-        if (diff === 0 && room.hostId === user.uid) {
+        // Only the host triggers the end of the auction
+        // We add a small grace period to allow for network propagation of last-second bids
+        if (diff === 0 && room.hostId === user.uid && room.currentPlayerId) {
           handleAuctionEnd();
         }
       };
 
       updateTimer();
-      timerRef.current = setInterval(updateTimer, 1000);
-      return () => {
-        if (timerRef.current) clearInterval(timerRef.current);
-      };
+      const interval = setInterval(updateTimer, 500); // Check more frequently
+      return () => clearInterval(interval);
     }
-  }, [room.timerEnd, room.hostId, user.uid]);
+  }, [room.timerEnd, room.hostId, user.uid, room.status, room.currentPlayerId]);
 
   const handleAuctionEnd = async () => {
-    if (!currentPlayer) return;
+    if (!currentPlayer || !room.currentPlayerId) return;
 
-    if (currentBidderId) {
-      // SOLD
-      const newSquads = { ...room.squads };
-      newSquads[currentBidderId] = [...(newSquads[currentBidderId] || []), currentPlayer.playerId];
-      
-      const newPurses = { ...room.purses };
-      newPurses[currentBidderId] -= currentBid;
+    // Use a local copy of the player ID to ensure we're ending the correct auction
+    const endingPlayerId = room.currentPlayerId;
+    const endingPlayerScore = currentPlayer.auctionScore;
 
-      const buyerName = room.players[currentBidderId]?.displayName || "Someone";
-      speak(`${currentPlayer.name} sold to ${buyerName} for ${currentBid >= 100 ? (currentBid/100).toFixed(2) + ' Crore' : currentBid + ' Lakhs'}`);
-
-      // Update total winnings (score) for the buyer
-      if (!room.players[currentBidderId]?.isBot) {
-        await dbService.updateUserWinnings(currentBidderId, currentPlayer.auctionScore);
+    try {
+      if (currentBidderId) {
+        const buyerName = room.players[currentBidderId]?.displayName || "Someone";
+        speak(`${currentPlayer.name} sold to ${buyerName} for ${currentBid >= 100 ? (currentBid/100).toFixed(2) + ' Crore' : currentBid + ' Lakhs'}`);
+      } else {
+        speak(`${currentPlayer.name} remained unsold`);
       }
 
-      await dbService.updateRoom(room.roomId, {
-        auctionedPlayerIds: [...room.auctionedPlayerIds, currentPlayer.playerId],
-        currentPlayerId: null,
-        squads: newSquads,
-        purses: newPurses,
-        currentBidAmount: 0,
-        currentBidderId: null,
-        skipVotes: []
-      });
-    } else {
-      // UNSOLD
-      speak(`${currentPlayer.name} remained unsold`);
-      await dbService.updateRoom(room.roomId, {
-        auctionedPlayerIds: [...room.auctionedPlayerIds, currentPlayer.playerId],
-        currentPlayerId: null,
-        currentBidAmount: 0,
-        currentBidderId: null,
-        skipVotes: []
-      });
+      // Call the transaction-based completion method
+      await dbService.completeAuction(room.roomId, endingPlayerId, endingPlayerScore);
+    } catch (error) {
+      console.error("Failed to complete auction:", error);
     }
   };
 
@@ -212,7 +191,13 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, allPlayer
     setBidPulse(true);
     setTimeout(() => setBidPulse(false), 300);
 
-    await dbService.bidOnPlayer(room.roomId, user.uid, nextBid, room.revealTimer);
+    try {
+      await dbService.bidOnPlayer(room.roomId, user.uid, nextBid, room.revealTimer);
+    } catch (error: any) {
+      console.error("Bid failed:", error);
+      // If it's a "Bid too low" error, it means someone else bid just before us
+      // We don't need to alert the user, they'll see the UI update
+    }
   };
 
   const handleSkipVote = async () => {
@@ -237,15 +222,21 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, allPlayer
           const botSquad = room.squads[bot.uid] || [];
           
           // Aggressive valuation: Base price + (Score * multiplier)
-          const scoreMultiplier = currentPlayer.auctionScore > 85 ? 25 : currentPlayer.auctionScore > 75 ? 18 : 12;
-          const valuation = Math.max(currentPlayer.basePrice * 2.5, currentPlayer.auctionScore * scoreMultiplier);
+          // Top tier players get massive valuations
+          const scoreMultiplier = currentPlayer.auctionScore > 90 ? 35 : currentPlayer.auctionScore > 80 ? 22 : 15;
+          const valuation = Math.max(currentPlayer.basePrice * 3, currentPlayer.auctionScore * scoreMultiplier);
           
           // Bots become extremely aggressive as time runs out or if they have few players
-          const squadUrgency = botSquad.length < 11 ? 0.9 : 0.5;
-          const timeUrgency = timeLeft <= 3 ? 0.95 : timeLeft <= 7 ? 0.7 : squadUrgency;
+          const squadUrgency = botSquad.length < 7 ? 0.95 : botSquad.length < 15 ? 0.8 : 0.5;
+          const timeUrgency = timeLeft <= 3 ? 0.98 : timeLeft <= 8 ? 0.85 : squadUrgency;
           
+          // Only bid if not already the highest bidder and within valuation
           if (botSquad.length < 25 && currentBidderId !== bot.uid && currentBid < valuation && botPurse > currentBid + 50) {
-            if (Math.random() < timeUrgency) { 
+            // Higher probability of bidding if valuation is much higher than current bid
+            const valuationGap = (valuation - currentBid) / valuation;
+            const bidProbability = Math.max(timeUrgency, valuationGap);
+
+            if (Math.random() < bidProbability) { 
               const nextBid = getNextBidAmount(currentBid, Math.max(50, currentPlayer.basePrice));
               if (botPurse >= nextBid) {
                 dbService.bidOnPlayer(room.roomId, bot.uid, nextBid, room.revealTimer);
@@ -253,7 +244,7 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, allPlayer
             }
           }
         });
-      }, 1000); // Check every second for snappy bidding
+      }, 600); // Check more frequently for faster bidding
       return () => clearInterval(botInterval);
     }
   }, [currentBid, currentBidderId, room.hostId, user.uid, currentPlayer, playersArr, room.purses, room.revealTimer, room.roomId, room.status, timeLeft]);

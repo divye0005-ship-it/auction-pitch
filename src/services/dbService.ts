@@ -217,13 +217,35 @@ export const dbService = {
 
   async bidOnPlayer(roomId: string, userId: string, amount: number, revealTimer: number): Promise<void> {
     try {
-      await updateDoc(doc(db, 'rooms', roomId), {
-        currentBidAmount: amount,
-        currentBidderId: userId,
-        timerEnd: Date.now() + (revealTimer * 1000)
+      const { runTransaction } = await import('firebase/firestore');
+      const roomRef = doc(db, 'rooms', roomId);
+
+      await runTransaction(db, async (transaction) => {
+        const roomDoc = await transaction.get(roomRef);
+        if (!roomDoc.exists()) throw new Error('Room not found');
+
+        const roomData = roomDoc.data() as Room;
+        
+        // Basic validations
+        if (!roomData.currentPlayerId) throw new Error('No player being auctioned');
+        if (amount <= (roomData.currentBidAmount || 0)) throw new Error('Bid too low');
+        
+        const userPurse = roomData.purses[userId] || 0;
+        if (amount > userPurse) throw new Error('Insufficient funds');
+
+        // Check if timer has expired (using local time as proxy, but transaction helps)
+        if (roomData.timerEnd && Date.now() > roomData.timerEnd + 1000) {
+          throw new Error('Auction already ended');
+        }
+
+        transaction.update(roomRef, {
+          currentBidAmount: amount,
+          currentBidderId: userId,
+          timerEnd: Date.now() + (revealTimer * 1000)
+        });
       });
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `rooms/${roomId}`);
+      handleFirestoreError(error, OperationType.UPDATE, `rooms/${roomId}/bid`);
     }
   },
 
@@ -291,6 +313,58 @@ export const dbService = {
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, `rooms/${roomId}/messages`);
+    }
+  },
+
+  async completeAuction(roomId: string, playerId: string, score: number): Promise<void> {
+    try {
+      const { runTransaction, arrayUnion, increment } = await import('firebase/firestore');
+      const roomRef = doc(db, 'rooms', roomId);
+
+      await runTransaction(db, async (transaction) => {
+        const roomDoc = await transaction.get(roomRef);
+        if (!roomDoc.exists()) return;
+
+        const roomData = roomDoc.data() as Room;
+        
+        // If no player is currently being auctioned or it's a different player, abort
+        if (roomData.currentPlayerId !== playerId) return;
+
+        const bidderId = roomData.currentBidderId;
+        const bidAmount = roomData.currentBidAmount || 0;
+
+        if (bidderId) {
+          // SOLD
+          transaction.update(roomRef, {
+            auctionedPlayerIds: arrayUnion(playerId),
+            currentPlayerId: null,
+            [`squads.${bidderId}`]: arrayUnion(playerId),
+            [`purses.${bidderId}`]: increment(-bidAmount),
+            currentBidAmount: 0,
+            currentBidderId: null,
+            skipVotes: []
+          });
+
+          // Update user winnings if not a bot
+          if (!roomData.players[bidderId]?.isBot) {
+            const userRef = doc(db, 'users', bidderId);
+            transaction.update(userRef, {
+              totalWinnings: increment(score)
+            });
+          }
+        } else {
+          // UNSOLD
+          transaction.update(roomRef, {
+            auctionedPlayerIds: arrayUnion(playerId),
+            currentPlayerId: null,
+            currentBidAmount: 0,
+            currentBidderId: null,
+            skipVotes: []
+          });
+        }
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `rooms/${roomId}/complete`);
     }
   }
 };
