@@ -131,11 +131,10 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isValidUser(request.resource.data);
       allow update: if isAuthenticated() && (
-        (isOwner(userId) && isValidUser(request.resource.data)) || 
+        isOwner(userId) || 
+        isAdmin() ||
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['totalWinnings']) && 
-         request.resource.data.totalWinnings is number && 
-         request.resource.data.totalWinnings >= resource.data.totalWinnings) ||
-        isAdmin()
+         request.resource.data.totalWinnings is number)
       );
     }
 

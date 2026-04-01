@@ -204,7 +204,10 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, allPlayer
     if (hasVotedToSkip) return;
     const newVotes = [...(room.skipVotes || []), user.uid];
     
-    if (newVotes.length >= Math.ceil(playersArr.length / 2)) {
+    // Count only human players for the skip vote
+    const humanPlayers = playersArr.filter(p => !p.isBot);
+    
+    if (newVotes.length >= humanPlayers.length) {
       // Skip player
       await dbService.skipPlayer(room.roomId, currentPlayer?.playerId || '', room.auctionedPlayerIds);
     } else {

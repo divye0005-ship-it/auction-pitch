@@ -321,14 +321,14 @@ export const dbService = {
       const { runTransaction, arrayUnion, increment } = await import('firebase/firestore');
       const roomRef = doc(db, 'rooms', roomId);
 
-      await runTransaction(db, async (transaction) => {
+      const winnerInfo = await runTransaction(db, async (transaction) => {
         const roomDoc = await transaction.get(roomRef);
-        if (!roomDoc.exists()) return;
+        if (!roomDoc.exists()) return null;
 
         const roomData = roomDoc.data() as Room;
         
         // If no player is currently being auctioned or it's a different player, abort
-        if (roomData.currentPlayerId !== playerId) return;
+        if (roomData.currentPlayerId !== playerId) return null;
 
         const bidderId = roomData.currentBidderId;
         const bidAmount = roomData.currentBidAmount || 0;
@@ -344,14 +344,7 @@ export const dbService = {
             currentBidderId: null,
             skipVotes: []
           });
-
-          // Update user winnings if not a bot
-          if (!roomData.players[bidderId]?.isBot) {
-            const userRef = doc(db, 'users', bidderId);
-            transaction.update(userRef, {
-              totalWinnings: increment(score)
-            });
-          }
+          return { bidderId, isBot: roomData.players[bidderId]?.isBot };
         } else {
           // UNSOLD
           transaction.update(roomRef, {
@@ -361,8 +354,22 @@ export const dbService = {
             currentBidderId: null,
             skipVotes: []
           });
+          return null;
         }
       });
+
+      // Update user winnings separately after transaction succeeds
+      // This ensures that even if profile update fails, the player is still claimed in the room
+      if (winnerInfo && !winnerInfo.isBot) {
+        try {
+          const userRef = doc(db, 'users', winnerInfo.bidderId);
+          await updateDoc(userRef, {
+            totalWinnings: increment(score)
+          });
+        } catch (err) {
+          console.warn("Failed to update user winnings, but player was claimed:", err);
+        }
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `rooms/${roomId}/complete`);
     }
