@@ -16,6 +16,8 @@ export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [room, setRoom] = useState<Room | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [userRank, setUserRank] = useState<number | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
   const [joinCode, setJoinCode] = useState('');
@@ -46,25 +48,39 @@ export default function App() {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setLoading(true);
       if (firebaseUser) {
-        const profile = await dbService.getUserProfile(firebaseUser.uid);
-        if (profile) {
-          setUser(profile);
-        } else {
-          const newProfile: UserProfile = {
-            uid: firebaseUser.uid,
-            displayName: firebaseUser.displayName || 'Player',
-            photoURL: firebaseUser.photoURL || undefined,
-            email: firebaseUser.email || '',
-            role: 'user',
-            totalWinnings: 0,
-            createdAt: null
-          };
-          await dbService.createUserProfile(newProfile);
-          setUser(newProfile);
+        try {
+          const profile = await dbService.getUserProfile(firebaseUser.uid);
+          if (profile) {
+            setUser(profile);
+          } else {
+            const newProfile: UserProfile = {
+              uid: firebaseUser.uid,
+              displayName: firebaseUser.displayName || 'Player',
+              photoURL: firebaseUser.photoURL || undefined,
+              email: firebaseUser.email || '',
+              role: 'user',
+              totalWinnings: 0,
+              createdAt: null
+            };
+            await dbService.createUserProfile(newProfile);
+            setUser(newProfile);
+          }
+          
+          // Fetch rank
+          const leaderboard = await dbService.getLeaderboard();
+          const rank = leaderboard.findIndex(u => u.uid === firebaseUser.uid);
+          if (rank !== -1) {
+            setUserRank(rank + 1);
+          }
+        } catch (error) {
+          console.error('Auth state change error:', error);
+          setLoginError('Failed to load user profile. Please check your internet connection.');
         }
       } else {
         setUser(null);
+        setUserRank(null);
       }
       setLoading(false);
     });
@@ -91,6 +107,22 @@ export default function App() {
       };
     }
   }, [user]);
+
+  useEffect(() => {
+    const updateRank = async () => {
+      if (!user) return;
+      try {
+        const leaderboard = await dbService.getLeaderboard();
+        const rank = leaderboard.findIndex(u => u.uid === user.uid);
+        if (rank !== -1) {
+          setUserRank(rank + 1);
+        }
+      } catch (error) {
+        console.error('Failed to update rank:', error);
+      }
+    };
+    updateRank();
+  }, [user?.totalWinnings]);
 
   useEffect(() => {
     const cleanupStaleRooms = async () => {
@@ -157,10 +189,16 @@ export default function App() {
   }, [user]);
 
   const handleLogin = async () => {
+    setLoginError(null);
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login error:', error);
+      if (error.code === 'auth/unauthorized-domain') {
+        setLoginError('This domain is not authorized in Firebase. Please add your Vercel domain to the "Authorized Domains" list in the Firebase Console.');
+      } else {
+        setLoginError('Login failed: ' + (error.message || 'Unknown error'));
+      }
     }
   };
 
@@ -309,6 +347,15 @@ export default function App() {
                 The Ultimate Real-Time Multiplayer Experience for the Next Generation of Fans
               </p>
               
+              {loginError && (
+                <div className="max-w-md w-full p-6 rounded-3xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium text-center space-y-2 mb-8">
+                  <p>{loginError}</p>
+                  {loginError.includes('Authorized Domains') && (
+                    <p className="text-xs opacity-70">Go to Firebase Console &gt; Authentication &gt; Settings &gt; Authorized domains and add your current URL.</p>
+                  )}
+                </div>
+              )}
+
               <motion.button 
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
@@ -425,7 +472,7 @@ export default function App() {
                       </div>
                       <div className="p-8 rounded-3xl bg-white/5 border border-white/10 flex flex-col items-center">
                         <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Rank</span>
-                        <div className="text-5xl font-black font-display text-purple-400">#--</div>
+                        <div className="text-5xl font-black font-display text-purple-400">#{userRank || '--'}</div>
                         <span className="text-[9px] font-bold text-purple-500/50 uppercase mt-2">Global Standing</span>
                       </div>
                     </div>

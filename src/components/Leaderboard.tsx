@@ -14,9 +14,14 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ onBack }) => {
 
   useEffect(() => {
     const fetchLeaderboard = async () => {
-      const data = await dbService.getLeaderboard();
-      setUsers(data);
-      setLoading(false);
+      try {
+        const data = await dbService.getLeaderboard();
+        setUsers(data);
+      } catch (error) {
+        console.error('Leaderboard fetch error:', error);
+      } finally {
+        setLoading(false);
+      }
     };
     fetchLeaderboard();
   }, []);

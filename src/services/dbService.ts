@@ -132,9 +132,13 @@ export const dbService = {
 
   async seedPlayers(players: Player[]): Promise<void> {
     try {
-      for (const player of players) {
-        await setDoc(doc(db, 'players', player.playerId), player);
-      }
+      const { writeBatch } = await import('firebase/firestore');
+      const batch = writeBatch(db);
+      players.forEach((player) => {
+        const docRef = doc(db, 'players', player.playerId);
+        batch.set(docRef, player);
+      });
+      await batch.commit();
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'players');
     }
