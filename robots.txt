@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://auction-pitch.vercel.app/sitemap.xml

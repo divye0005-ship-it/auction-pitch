@@ -27,7 +27,11 @@ const AuctionCard: React.FC<AuctionCardProps> = ({ player, isRevealed }) => {
   };
 
   return (
-    <div className="w-full max-w-sm mx-auto perspective-1000">
+    <div className="w-full max-w-sm mx-auto perspective-1000 relative">
+      {/* Pitch Pattern Background */}
+      <div className="absolute inset-0 pointer-events-none opacity-[0.03] overflow-hidden rounded-[2.5rem]">
+        <div className="absolute inset-0 bg-[repeating-linear-gradient(90deg,transparent,transparent_20px,rgba(255,255,255,0.5)_20px,rgba(255,255,255,0.5)_40px)]"></div>
+      </div>
       <motion.div
         initial={{ rotateY: -90, opacity: 0 }}
         animate={{ rotateY: 0, opacity: 1 }}
@@ -45,16 +49,10 @@ const AuctionCard: React.FC<AuctionCardProps> = ({ player, isRevealed }) => {
             />
             <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-transparent to-transparent"></div>
             
-            {/* Team Badge */}
-            <div className="absolute top-6 left-6 px-4 py-2 rounded-full glass-dark border border-white/10 flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></div>
-              <span className="text-[10px] font-black uppercase tracking-widest">{player.team}</span>
-            </div>
-
             {/* Score Badge */}
-            <div className="absolute top-6 right-6 w-14 h-14 rounded-2xl glass-dark border border-white/10 flex flex-col items-center justify-center">
-              <span className="text-[10px] font-black text-slate-500 uppercase">Score</span>
-              <span className="text-xl font-black font-mono">{player.auctionScore}</span>
+            <div className="absolute top-4 right-4 md:top-6 md:right-6 w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl glass-dark border border-white/10 flex flex-col items-center justify-center">
+              <span className="text-[8px] md:text-[10px] font-black text-slate-500 uppercase">Score</span>
+              <span className="text-sm md:text-xl font-black font-mono">{player.auctionScore}</span>
             </div>
           </div>
 

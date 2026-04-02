@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Room, Player, UserProfile } from '../types';
 import { dbService } from '../services/dbService';
 import AuctionCard from './AuctionCard';
+import { getNextBidAmount } from '../lib/auctionUtils';
 import { Zap, Plus, Timer as TimerIcon, Wallet, Users, SkipForward, Trophy, TrendingUp, Volume2, VolumeX } from 'lucide-react';
 
 interface AuctionGameplayProps {
@@ -41,6 +42,7 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, allPlayer
   const currentBidder = React.useMemo(() => currentBidderId ? room.players[currentBidderId] : null, [currentBidderId, room.players]);
   const myPurse = room.purses[user.uid] || 0;
   const hasVotedToSkip = room.skipVotes?.includes(user.uid);
+  const humanPlayers = React.useMemo(() => playersArr.filter(p => !p.isBot), [playersArr]);
 
   const speak = React.useCallback((text: string) => {
     if (!window.speechSynthesis || isMuted) return;
@@ -78,7 +80,7 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, allPlayer
 
   // Audio announcements for bids
   useEffect(() => {
-    if (currentBid > 0) {
+    if (currentBid > 0 && !isMuted) {
       let text = "";
       if (currentBid >= 100) {
         const cr = (currentBid / 100).toFixed(2);
@@ -88,7 +90,14 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, allPlayer
       }
       speak(text);
     }
-  }, [currentBid]);
+  }, [currentBid, isMuted, speak]);
+
+  // Cancel speech immediately when muted
+  useEffect(() => {
+    if (isMuted && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+  }, [isMuted]);
 
   // Select next player if none active
   useEffect(() => {
@@ -164,14 +173,6 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, allPlayer
     }
   };
 
-  const getNextBidAmount = (current: number, base: number) => {
-    if (current === 0) return base; 
-    if (current < 200) return current + 10;
-    if (current < 500) return current + 25;
-    if (current < 1000) return current + 50;
-    return current + 100;
-  };
-
   const handleBid = async () => {
     if (!currentPlayer || currentBidderId === user.uid) return;
     
@@ -181,7 +182,7 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, allPlayer
       return;
     }
 
-    const nextBid = getNextBidAmount(currentBid, Math.max(50, currentPlayer.basePrice));
+    const nextBid = getNextBidAmount(currentBid, currentPlayer.basePrice);
 
     if (myPurse < nextBid) {
       alert("Not enough purse!");
@@ -192,26 +193,26 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, allPlayer
     setTimeout(() => setBidPulse(false), 300);
 
     try {
-      await dbService.bidOnPlayer(room.roomId, user.uid, nextBid, room.revealTimer);
+      await dbService.bidOnPlayer(room.roomId, user.uid, nextBid, room.revealTimer, currentPlayer.basePrice);
     } catch (error: any) {
       console.error("Bid failed:", error);
-      // If it's a "Bid too low" error, it means someone else bid just before us
-      // We don't need to alert the user, they'll see the UI update
     }
   };
 
   const handleSkipVote = async () => {
     if (hasVotedToSkip) return;
-    const newVotes = [...(room.skipVotes || []), user.uid];
     
     // Count only human players for the skip vote
-    const humanPlayers = playersArr.filter(p => !p.isBot);
+    const currentVotes = room.skipVotes || [];
     
-    if (newVotes.length >= humanPlayers.length) {
+    if (currentVotes.length + 1 >= humanPlayers.length) {
       // Skip player
       await dbService.skipPlayer(room.roomId, currentPlayer?.playerId || '', room.auctionedPlayerIds);
     } else {
-      await dbService.updateRoom(room.roomId, { skipVotes: newVotes });
+      // Use arrayUnion for safer updates
+      await dbService.updateRoom(room.roomId, { 
+        skipVotes: [...currentVotes, user.uid]
+      });
     }
   };
 
@@ -224,39 +225,69 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, allPlayer
           const botPurse = room.purses[bot.uid] || 0;
           const botSquad = room.squads[bot.uid] || [];
           
-          // Aggressive valuation: Base price + (Score * multiplier)
-          // Top tier players get massive valuations
-          const scoreMultiplier = currentPlayer.auctionScore > 90 ? 35 : currentPlayer.auctionScore > 80 ? 22 : 15;
-          const valuation = Math.max(currentPlayer.basePrice * 3, currentPlayer.auctionScore * scoreMultiplier);
+          // Bot Personalities based on UID hash
+          const botHash = bot.uid.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+          const isAggressive = botHash % 3 === 0;
+          const isConservative = botHash % 3 === 1;
+          
+          // Valuation logic: More selective
+          // Base valuation on score and role
+          let valuationMultiplier = 15;
+          if (currentPlayer.auctionScore > 90) valuationMultiplier = isAggressive ? 45 : 35;
+          else if (currentPlayer.auctionScore > 80) valuationMultiplier = isAggressive ? 30 : 22;
+          else if (currentPlayer.auctionScore > 70) valuationMultiplier = isAggressive ? 20 : 15;
+          else valuationMultiplier = isAggressive ? 12 : 8;
+
+          // Role-based valuation (bots prioritize what they need)
+          const squadRoles = botSquad.map(id => allPlayers.find(pl => pl.playerId === id)?.role).filter(Boolean);
+          const roleCount = squadRoles.filter(r => r === currentPlayer.role).length;
+          
+          // If they already have many of this role, they bid less
+          if (roleCount >= 4) valuationMultiplier *= 0.5;
+          else if (roleCount >= 2) valuationMultiplier *= 0.8;
+          
+          // Conservative bots bid less
+          if (isConservative) valuationMultiplier *= 0.7;
+
+          const valuation = Math.max(currentPlayer.basePrice * 2, currentPlayer.auctionScore * valuationMultiplier);
           
           // Bots become extremely aggressive as time runs out or if they have few players
-          const squadUrgency = botSquad.length < 7 ? 0.95 : botSquad.length < 15 ? 0.8 : 0.5;
-          const timeUrgency = timeLeft <= 3 ? 0.98 : timeLeft <= 8 ? 0.85 : squadUrgency;
+          const squadUrgency = botSquad.length < 7 ? 0.95 : botSquad.length < 15 ? 0.7 : 0.4;
+          const timeUrgency = timeLeft <= 3 ? 0.98 : timeLeft <= 8 ? 0.8 : squadUrgency;
           
           // Only bid if not already the highest bidder and within valuation
           if (botSquad.length < 25 && currentBidderId !== bot.uid && currentBid < valuation && botPurse > currentBid + 50) {
             // Higher probability of bidding if valuation is much higher than current bid
             const valuationGap = (valuation - currentBid) / valuation;
-            const bidProbability = Math.max(timeUrgency, valuationGap);
+            let bidProbability = Math.max(timeUrgency * 0.5, valuationGap);
+            
+            // Random factor to make them less robotic
+            if (Math.random() > 0.7) bidProbability *= 0.5;
 
             if (Math.random() < bidProbability) { 
-              const nextBid = getNextBidAmount(currentBid, Math.max(50, currentPlayer.basePrice));
+              const nextBid = getNextBidAmount(currentBid, currentPlayer.basePrice);
               if (botPurse >= nextBid) {
-                dbService.bidOnPlayer(room.roomId, bot.uid, nextBid, room.revealTimer);
+                dbService.bidOnPlayer(room.roomId, bot.uid, nextBid, room.revealTimer, currentPlayer.basePrice);
               }
             }
           }
         });
-      }, 600); // Check more frequently for faster bidding
+      }, 800); // Slightly slower check to feel more human
       return () => clearInterval(botInterval);
     }
-  }, [currentBid, currentBidderId, room.hostId, user.uid, currentPlayer, playersArr, room.purses, room.revealTimer, room.roomId, room.status, timeLeft]);
+  }, [currentBid, currentBidderId, room.hostId, user.uid, currentPlayer, playersArr, room.purses, room.revealTimer, room.roomId, room.status, timeLeft, allPlayers]);
 
   const timerPercentage = (timeLeft / room.revealTimer) * 100;
 
   return (
-    <div className="flex-1 p-4 md:p-12 max-w-7xl mx-auto w-full overflow-y-auto pb-32 md:pb-12">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8 h-full">
+    <div className="flex-1 p-4 md:p-12 max-w-7xl mx-auto w-full overflow-y-auto pb-32 md:pb-12 relative">
+      {/* Stadium Background Effect */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-20">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[200%] aspect-square bg-gradient-to-b from-cyan-500/20 to-transparent rounded-full blur-[120px]"></div>
+        <div className="absolute bottom-0 left-0 w-full h-1/2 bg-gradient-to-t from-green-500/10 to-transparent"></div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8 h-full relative z-10">
         
         {/* Left Column: Player Card */}
         <div className="lg:col-span-5 flex flex-col items-center justify-center gap-6 md:gap-8">
@@ -300,16 +331,30 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, allPlayer
           </div>
 
           {/* Skip Button */}
-          <button 
-            onClick={handleSkipVote}
-            disabled={hasVotedToSkip}
-            className={`w-full sm:w-auto px-8 py-4 rounded-2xl glass flex items-center justify-center gap-3 transition-all ${hasVotedToSkip ? 'opacity-50 grayscale' : 'hover:bg-white/10 text-slate-400 hover:text-white'}`}
-          >
-            <SkipForward className="w-5 h-5" />
-            <span className="text-[10px] font-black uppercase tracking-widest">
-              Skip ({room.skipVotes?.length || 0}/{Math.ceil(playersArr.length / 2)})
-            </span>
-          </button>
+          <div className="w-full flex flex-col gap-3">
+            {/* Mobile Bid Button */}
+            <div className="lg:hidden w-full">
+              <button 
+                onClick={handleBid}
+                disabled={currentBidderId === user.uid || myPurse < getNextBidAmount(currentBid, currentPlayer?.basePrice || 50)}
+                className={`w-full py-5 rounded-2xl bg-gradient-to-r from-cyan-400 to-purple-600 text-white font-black text-lg tracking-widest uppercase flex items-center justify-center gap-3 shadow-2xl active:scale-[0.98] disabled:opacity-50 disabled:grayscale transition-all ${currentBidderId === user.uid ? 'cursor-not-allowed' : ''}`}
+              >
+                <Plus className="w-6 h-6" />
+                {currentBidderId === user.uid ? 'Waiting...' : `Bid ₹${getNextBidAmount(currentBid, currentPlayer?.basePrice || 50)}L`}
+              </button>
+            </div>
+
+            <button 
+              onClick={handleSkipVote}
+              disabled={hasVotedToSkip}
+              className={`w-full px-8 py-4 rounded-2xl glass flex items-center justify-center gap-3 transition-all ${hasVotedToSkip ? 'opacity-50 grayscale' : 'hover:bg-white/10 text-slate-400 hover:text-white'}`}
+            >
+              <SkipForward className="w-5 h-5" />
+              <span className="text-[10px] font-black uppercase tracking-widest">
+                Skip ({room.skipVotes?.length || 0}/{humanPlayers.length})
+              </span>
+            </button>
+          </div>
         </div>
 
         {/* Right Column: Bidding Controls & Stats */}
@@ -321,7 +366,10 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, allPlayer
             
             <div className="flex flex-col sm:flex-row items-center justify-between gap-6 md:gap-8 relative z-10">
               <div className="flex flex-col items-center sm:items-start">
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-2">Current Bid</span>
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">Live Auction</span>
+                </div>
                 <div className="flex items-baseline gap-2 md:gap-3">
                   <span className="text-5xl md:text-7xl font-black font-display tracking-tighter text-white">
                     ₹{currentBid || 0}
@@ -368,13 +416,14 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, allPlayer
                     </div>
                   </div>
               
+              {/* Desktop Bid Button */}
               <button 
                 onClick={handleBid}
-                disabled={currentBidderId === user.uid || myPurse < getNextBidAmount(currentBid, currentPlayer?.basePrice || 25)}
-                className={`w-full py-5 md:py-6 rounded-[1.5rem] bg-gradient-to-r from-cyan-400 to-purple-600 text-white font-black text-lg md:text-xl tracking-widest uppercase flex items-center justify-center gap-3 md:gap-4 shadow-2xl hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:grayscale transition-all ${currentBidderId === user.uid ? 'cursor-not-allowed' : ''}`}
+                disabled={currentBidderId === user.uid || myPurse < getNextBidAmount(currentBid, currentPlayer?.basePrice || 50)}
+                className={`hidden lg:flex w-full py-5 md:py-6 rounded-[1.5rem] bg-gradient-to-r from-cyan-400 to-purple-600 text-white font-black text-lg md:text-xl tracking-widest uppercase items-center justify-center gap-3 md:gap-4 shadow-2xl hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:grayscale transition-all ${currentBidderId === user.uid ? 'cursor-not-allowed' : ''}`}
               >
                 <Plus className="w-6 h-6 md:w-8 md:h-8" />
-                {currentBidderId === user.uid ? 'Waiting...' : `Bid ₹${getNextBidAmount(currentBid, currentPlayer?.basePrice || 25)}L`}
+                {currentBidderId === user.uid ? 'Waiting...' : `Bid ₹${getNextBidAmount(currentBid, currentPlayer?.basePrice || 50)}L`}
               </button>
             </div>
 

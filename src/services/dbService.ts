@@ -3,6 +3,7 @@ import {
   doc, getDoc, setDoc, collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, getDocs, serverTimestamp 
 } from 'firebase/firestore';
 import { UserProfile, Room, Player, Message } from '../types';
+import { getNextBidAmount } from '../lib/auctionUtils';
 
 enum OperationType {
   CREATE = 'create',
@@ -90,6 +91,27 @@ export const dbService = {
       }
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${uid}`);
+    }
+  },
+
+  async updateProfile(uid: string, data: { displayName?: string, photoURL?: string }): Promise<void> {
+    try {
+      await updateDoc(doc(db, 'users', uid), data);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `users/${uid}`);
+    }
+  },
+
+  async isUsernameUnique(username: string, currentUid: string): Promise<boolean> {
+    try {
+      const q = query(collection(db, 'users'), where('displayName', '==', username));
+      const querySnapshot = await getDocs(q);
+      if (querySnapshot.empty) return true;
+      // If there's a match, check if it's the current user
+      return querySnapshot.docs.every(doc => doc.id === currentUid);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, 'users');
+      return false;
     }
   },
 
@@ -215,7 +237,7 @@ export const dbService = {
     }
   },
 
-  async bidOnPlayer(roomId: string, userId: string, amount: number, revealTimer: number): Promise<void> {
+  async bidOnPlayer(roomId: string, userId: string, amount: number, revealTimer: number, basePrice: number): Promise<void> {
     try {
       const { runTransaction } = await import('firebase/firestore');
       const roomRef = doc(db, 'rooms', roomId);
@@ -228,10 +250,18 @@ export const dbService = {
         
         // Basic validations
         if (!roomData.currentPlayerId) throw new Error('No player being auctioned');
-        if (amount <= (roomData.currentBidAmount || 0)) throw new Error('Bid too low');
+        
+        const currentBid = roomData.currentBidAmount || 0;
+        let finalAmount = amount;
+        
+        // If the bid is too low (someone else bid just before us), 
+        // calculate the next valid bid based on the ACTUAL current bid in the DB
+        if (finalAmount <= currentBid) {
+          finalAmount = getNextBidAmount(currentBid, basePrice);
+        }
         
         const userPurse = roomData.purses[userId] || 0;
-        if (amount > userPurse) throw new Error('Insufficient funds');
+        if (finalAmount > userPurse) throw new Error('Insufficient funds');
 
         // Check if timer has expired (using local time as proxy, but transaction helps)
         if (roomData.timerEnd && Date.now() > roomData.timerEnd + 1000) {
@@ -239,12 +269,17 @@ export const dbService = {
         }
 
         transaction.update(roomRef, {
-          currentBidAmount: amount,
+          currentBidAmount: finalAmount,
           currentBidderId: userId,
           timerEnd: Date.now() + (revealTimer * 1000)
         });
       });
-    } catch (error) {
+    } catch (error: any) {
+      // Don't use handleFirestoreError for business logic errors
+      const businessLogicErrors = ['Bid too low', 'Insufficient funds', 'Auction already ended', 'Room not found', 'No player being auctioned'];
+      if (businessLogicErrors.includes(error.message)) {
+        throw error;
+      }
       handleFirestoreError(error, OperationType.UPDATE, `rooms/${roomId}/bid`);
     }
   },

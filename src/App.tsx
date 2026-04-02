@@ -24,9 +24,52 @@ export default function App() {
     return saved ? JSON.parse(saved) : false;
   });
 
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editPhoto, setEditPhoto] = useState('');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
   useEffect(() => {
+    if (isMuted && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
     localStorage.setItem('ipl_auction_muted', JSON.stringify(isMuted));
   }, [isMuted]);
+
+  const handleUpdateProfile = async () => {
+    if (!user || isSavingProfile) return;
+    if (!editName.trim()) {
+      alert("Username cannot be empty!");
+      return;
+    }
+
+    setIsSavingProfile(true);
+    try {
+      const isUnique = await dbService.isUsernameUnique(editName, user.uid);
+      if (!isUnique) {
+        alert("This username is already taken. Please choose another one.");
+        return;
+      }
+
+      await dbService.updateProfile(user.uid, {
+        displayName: editName,
+        photoURL: editPhoto || user.photoURL
+      });
+
+      setUser({
+        ...user,
+        displayName: editName,
+        photoURL: editPhoto || user.photoURL
+      });
+      setIsEditingProfile(false);
+    } catch (error) {
+      console.error("Failed to update profile:", error);
+      alert("Failed to update profile. Please try again.");
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
   const [joinCode, setJoinCode] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [createOptions, setCreateOptions] = useState({ players: 5, timer: 15, isPublic: true });
@@ -315,14 +358,6 @@ export default function App() {
 
   return (
     <div className={`min-h-screen ${isDarkMode ? 'bg-[#050505] text-white' : 'bg-slate-50 text-slate-900'} transition-colors duration-500`}>
-      {/* Theme Toggle */}
-      <button 
-        onClick={() => setIsDarkMode(!isDarkMode)}
-        className="fixed top-6 right-6 z-50 p-4 rounded-2xl glass-dark text-cyan-400 hover:scale-110 transition-all"
-      >
-        {isDarkMode ? <Sun className="w-6 h-6" /> : <Moon className="w-6 h-6" />}
-      </button>
-
       {!user ? (
         <div className="min-h-screen flex flex-col items-center justify-center p-6 relative overflow-hidden">
           {/* Background Gradients */}
@@ -343,10 +378,10 @@ export default function App() {
                 <Trophy className="w-16 h-16 text-white" />
               </motion.div>
               
-              <h1 className="text-[15vw] md:text-[120px] font-black leading-[0.85] uppercase tracking-tighter text-center mb-8 font-display">
-                IPL 2026<br/>
+              <h1 className="text-[10vw] md:text-[80px] font-black leading-[0.9] uppercase tracking-tighter text-center mb-8 font-display">
+                IPL Auction Simulator<br/>
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-purple-500 to-pink-500">
-                  AUCTION PRO
+                  Bid. Build. Win.
                 </span>
               </h1>
               
@@ -420,7 +455,7 @@ export default function App() {
 
           {/* Mobile Header */}
           <div className="md:hidden flex items-center justify-between mt-6 mb-12">
-            <h1 className="text-3xl font-black uppercase tracking-tighter font-display text-cyan-400">IPL AUCTION</h1>
+            <h1 className="text-3xl font-black uppercase tracking-tighter font-display text-cyan-400">Auction Pitch Simulator</h1>
             <div className="flex items-center gap-3">
               <button 
                 onClick={() => setIsMuted(!isMuted)} 
@@ -452,24 +487,112 @@ export default function App() {
                     <ArrowLeft className="w-5 h-5" />
                   </button>
 
+                  {/* Theme Toggle in Profile */}
+                  <button 
+                    onClick={() => setIsDarkMode(!isDarkMode)}
+                    className="absolute top-8 right-8 p-3 rounded-xl glass text-cyan-400 hover:scale-110 transition-all"
+                  >
+                    {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+                  </button>
+
                   <div className="flex flex-col items-center text-center pt-12 pb-8">
-                    <div className="relative mb-8">
-                      <img src={user.photoURL} className="w-32 h-32 rounded-[2.5rem] border-4 border-cyan-500/30 p-2" alt="" />
+                    <div className="relative mb-8 group">
+                      <img src={user.photoURL} className="w-32 h-32 rounded-[2.5rem] border-4 border-cyan-500/30 p-2 object-cover" alt="" />
                       <div className="absolute -bottom-2 -right-2 bg-gradient-to-br from-cyan-400 to-purple-600 p-3 rounded-2xl shadow-xl">
                         <Award className="w-6 h-6 text-white" />
                       </div>
                     </div>
                     
-                    <h2 className="text-4xl font-black uppercase tracking-tighter font-display mb-2">{user.displayName}</h2>
-                    <p className="text-slate-500 font-bold uppercase tracking-[0.3em] text-xs mb-8">{user.email}</p>
+                    {isEditingProfile ? (
+                      <div className="w-full max-w-md space-y-6 mb-8">
+                        <div className="flex flex-col items-start gap-2">
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Username</label>
+                          <input 
+                            type="text"
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-lg font-black tracking-tight focus:outline-none focus:border-cyan-500 focus:bg-white/10 transition-all"
+                            placeholder="Enter unique username"
+                          />
+                        </div>
+                        
+                        <div className="flex flex-col items-start gap-4">
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Choose Avatar</label>
+                          <div className="grid grid-cols-4 gap-3 w-full">
+                            {[
+                              'https://api.dicebear.com/7.x/avataaars/svg?seed=Felix',
+                              'https://api.dicebear.com/7.x/avataaars/svg?seed=Aneka',
+                              'https://api.dicebear.com/7.x/avataaars/svg?seed=Jack',
+                              'https://api.dicebear.com/7.x/avataaars/svg?seed=Mimi',
+                              'https://api.dicebear.com/7.x/avataaars/svg?seed=Casper',
+                              'https://api.dicebear.com/7.x/avataaars/svg?seed=Toby',
+                              'https://api.dicebear.com/7.x/avataaars/svg?seed=Luna',
+                              'https://api.dicebear.com/7.x/avataaars/svg?seed=Oliver'
+                            ].map((avatar) => (
+                              <button
+                                key={avatar}
+                                onClick={() => setEditPhoto(avatar)}
+                                className={`relative aspect-square rounded-xl overflow-hidden border-2 transition-all ${editPhoto === avatar ? 'border-cyan-400 scale-110 shadow-lg shadow-cyan-400/20' : 'border-transparent opacity-50 hover:opacity-100'}`}
+                              >
+                                <img src={avatar} className="w-full h-full object-cover" alt="Avatar" />
+                              </button>
+                            ))}
+                          </div>
+                          <div className="w-full flex flex-col gap-2">
+                            <span className="text-[9px] font-bold text-slate-600 uppercase text-center">Or provide custom URL</span>
+                            <input 
+                              type="text"
+                              value={editPhoto}
+                              onChange={(e) => setEditPhoto(e.target.value)}
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs font-medium focus:outline-none focus:border-cyan-500 transition-all"
+                              placeholder="https://example.com/photo.jpg"
+                            />
+                          </div>
+                        </div>
 
-                    <button 
-                      onClick={testVoice}
-                      className="mb-12 px-6 py-3 rounded-xl glass hover:bg-cyan-500/10 text-cyan-400 text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2"
-                    >
-                      <Volume2 className="w-4 h-4" />
-                      Test Voice Quality
-                    </button>
+                        <div className="flex gap-4 pt-4">
+                          <button 
+                            onClick={handleUpdateProfile}
+                            disabled={isSavingProfile}
+                            className="flex-1 py-4 rounded-2xl bg-cyan-500 text-black font-black uppercase tracking-widest text-xs hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
+                          >
+                            {isSavingProfile ? 'Saving...' : 'Save Profile'}
+                          </button>
+                          <button 
+                            onClick={() => setIsEditingProfile(false)}
+                            className="flex-1 py-4 rounded-2xl glass text-slate-400 font-black uppercase tracking-widest text-xs hover:bg-white/10 transition-all"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <h2 className="text-4xl font-black uppercase tracking-tighter font-display mb-2">{user.displayName}</h2>
+                        <p className="text-slate-500 font-bold uppercase tracking-[0.3em] text-xs mb-8">{user.email}</p>
+
+                        <div className="flex gap-4 mb-12">
+                          <button 
+                            onClick={() => {
+                              setEditName(user.displayName);
+                              setEditPhoto(user.photoURL || '');
+                              setIsEditingProfile(true);
+                            }}
+                            className="px-6 py-3 rounded-xl glass hover:bg-white/10 text-white text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2"
+                          >
+                            <UserIcon className="w-4 h-4" />
+                            Edit Profile
+                          </button>
+                          <button 
+                            onClick={testVoice}
+                            className="px-6 py-3 rounded-xl glass hover:bg-cyan-500/10 text-cyan-400 text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2"
+                          >
+                            <Volume2 className="w-4 h-4" />
+                            Test Voice
+                          </button>
+                        </div>
+                      </>
+                    )}
 
                     <div className="grid grid-cols-2 gap-6 w-full">
                       <div className="p-8 rounded-3xl bg-white/5 border border-white/10 flex flex-col items-center">
