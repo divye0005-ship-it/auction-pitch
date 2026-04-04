@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { db, auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged } from './firebase';
+import { db, auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged, signInAnonymously } from './firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { dbService } from './services/dbService';
 import { IPL_PLAYERS } from './services/playerData';
@@ -10,7 +10,90 @@ import AuctionGameplay from './components/AuctionGameplay';
 import ResultsScreen from './components/ResultsScreen';
 import ChatPanel from './components/ChatPanel';
 import Leaderboard from './components/Leaderboard';
-import { Trophy, Plus, Users, LogIn, LogOut, Sun, Moon, Mail, ChevronRight, Play, LayoutDashboard, User as UserIcon, ArrowLeft, Award, Volume2, VolumeX } from 'lucide-react';
+import { Trophy, Plus, Users, LogIn, LogOut, Sun, Moon, Mail, ChevronRight, Play, LayoutDashboard, User as UserIcon, ArrowLeft, Award, Volume2, VolumeX, Zap, MessageSquare, Shield, Sparkles, Star, BookOpen, Info, HelpCircle, CheckCircle2, AlertCircle } from 'lucide-react';
+
+const Tutorial = ({ onBack }: { onBack: () => void }) => {
+  const steps = [
+    {
+      title: "Join or Create",
+      description: "Start by creating a private room for friends or join a public auction to compete with the community.",
+      icon: Plus,
+      color: "text-cyan-400",
+      bg: "bg-cyan-500/10"
+    },
+    {
+      title: "The Bidding War",
+      description: "Players are revealed one by one. Use your budget wisely! Each bid increases the price. Don't let your dream player go to a rival.",
+      icon: Zap,
+      color: "text-yellow-400",
+      bg: "bg-yellow-500/10"
+    },
+    {
+      title: "Squad Strategy",
+      description: "You need a balanced team. Track your purse and squad requirements (Batters, Bowlers, All-rounders, WK).",
+      icon: Shield,
+      color: "text-purple-400",
+      bg: "bg-purple-500/10"
+    },
+    {
+      title: "Win the League",
+      description: "After the auction, teams are ranked based on their total Auction Score. The highest score wins the championship!",
+      icon: Trophy,
+      color: "text-green-400",
+      bg: "bg-green-500/10"
+    }
+  ];
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-4 mb-10">
+        <button onClick={onBack} className="p-3 rounded-xl glass hover:bg-white/10 transition-all">
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <h2 className="text-3xl font-black uppercase tracking-tighter font-display">How to Play</h2>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {steps.map((step, idx) => (
+          <motion.div 
+            key={idx}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: idx * 0.1 }}
+            className="p-8 rounded-[2.5rem] bg-white/5 border border-white/10 relative overflow-hidden group"
+          >
+            <div className={`w-14 h-14 rounded-2xl ${step.bg} flex items-center justify-center mb-6 group-hover:scale-110 transition-transform`}>
+              <step.icon className={`w-7 h-7 ${step.color}`} />
+            </div>
+            <h3 className="text-xl font-black uppercase tracking-tight mb-3">{step.title}</h3>
+            <p className="text-sm text-slate-500 font-bold leading-relaxed">{step.description}</p>
+            <div className="absolute top-4 right-4 text-4xl font-black text-white/5 font-display">0{idx + 1}</div>
+          </motion.div>
+        ))}
+      </div>
+
+      <div className="mt-12 p-8 rounded-[2.5rem] bg-gradient-to-br from-cyan-500/10 to-purple-500/10 border border-cyan-500/20">
+        <h4 className="text-lg font-black uppercase tracking-tight mb-4 flex items-center gap-2">
+          <Info className="w-5 h-5 text-cyan-400" />
+          Pro Tips
+        </h4>
+        <ul className="space-y-3">
+          {[
+            "Watch the timer! Bids in the last 5 seconds reset the clock.",
+            "AI Bots analyze your budget—they might try to make you overpay.",
+            "Check the 'Auction Score' on player cards to see their true value.",
+            "Use the chat to coordinate or distract your opponents."
+          ].map((tip, i) => (
+            <li key={i} className="flex items-start gap-3 text-xs font-bold text-slate-400">
+              <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
+              {tip}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+};
 
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -23,8 +106,29 @@ export default function App() {
     const saved = localStorage.getItem('ipl_auction_muted');
     return saved ? JSON.parse(saved) : false;
   });
+  const [showBetaError, setShowBetaError] = useState(false);
+
+  useEffect(() => {
+    const handleError = (event: ErrorEvent | PromiseRejectionEvent) => {
+      console.error('Global error caught:', event);
+      setShowBetaError(true);
+    };
+
+    window.addEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleError);
+
+    return () => {
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleError);
+    };
+  }, []);
+
+  const [guestGamePlayed, setGuestGamePlayed] = useState(() => {
+    return localStorage.getItem('ipl_guest_played') === 'true';
+  });
 
   const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
   const [editName, setEditName] = useState('');
   const [editPhoto, setEditPhoto] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
@@ -71,8 +175,9 @@ export default function App() {
   };
 
   const [joinCode, setJoinCode] = useState('');
+  const [showHowToPlay, setShowHowToPlay] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
-  const [createOptions, setCreateOptions] = useState({ players: 5, timer: 15, isPublic: true });
+  const [createOptions, setCreateOptions] = useState({ players: 5, timer: 15, isPublic: true, includeBots: false });
   const [publicRooms, setPublicRooms] = useState<Room[]>([]);
   const [currentView, setCurrentView] = useState<'play' | 'rooms' | 'leaderboard' | 'profile'>('play');
 
@@ -107,10 +212,10 @@ export default function App() {
           } else {
             const newProfile: UserProfile = {
               uid: firebaseUser.uid,
-              displayName: firebaseUser.displayName || 'Player',
-              photoURL: firebaseUser.photoURL || undefined,
+              displayName: firebaseUser.isAnonymous ? `Guest_${firebaseUser.uid.substring(0, 4)}` : (firebaseUser.displayName || 'Player'),
+              photoURL: firebaseUser.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${firebaseUser.uid}`,
               email: firebaseUser.email || '',
-              role: 'user',
+              role: firebaseUser.isAnonymous ? 'guest' : 'user',
               totalWinnings: 0,
               createdAt: null
             };
@@ -244,10 +349,32 @@ export default function App() {
       await signInWithPopup(auth, googleProvider);
     } catch (error: any) {
       console.error('Login error:', error);
+      if (error.code === 'auth/cancelled-popup-request' || error.code === 'auth/popup-closed-by-user') {
+        // User cancelled or closed the popup, don't show an error message
+        return;
+      }
       if (error.code === 'auth/unauthorized-domain') {
         setLoginError('This domain is not authorized in Firebase. Please add your Vercel domain to the "Authorized Domains" list in the Firebase Console.');
       } else {
         setLoginError('Login failed: ' + (error.message || 'Unknown error'));
+      }
+    }
+  };
+
+  const handleGuestLogin = async () => {
+    if (guestGamePlayed) {
+      alert("You have already played your free guest game. Please sign in with Google to continue playing!");
+      return;
+    }
+    setLoginError(null);
+    try {
+      await signInAnonymously(auth);
+    } catch (error: any) {
+      console.error('Guest login error:', error);
+      if (error.code === 'auth/admin-restricted-operation') {
+        setLoginError('Guest Mode (Anonymous Auth) is not enabled in your Firebase Console. \n\nTo fix this:\n1. Go to Firebase Console > Authentication > Sign-in method\n2. Click "Add new provider"\n3. Select "Anonymous" and click "Enable"\n4. Save and try again.');
+      } else {
+        setLoginError('Guest login failed: ' + (error.message || 'Unknown error'));
       }
     }
   };
@@ -257,25 +384,54 @@ export default function App() {
     setRoom(null);
   };
 
+  useEffect(() => {
+    if (room?.status === 'finished' && user?.role === 'guest') {
+      localStorage.setItem('ipl_guest_played', 'true');
+      setGuestGamePlayed(true);
+    }
+  }, [room?.status, user?.role]);
+
+  useEffect(() => {
+    // Initial cleanup
+    dbService.cleanupEmptyRooms();
+    
+    // Periodic cleanup every 1 hour
+    const cleanupInterval = setInterval(() => {
+      dbService.cleanupEmptyRooms();
+    }, 60 * 60 * 1000);
+
+    return () => clearInterval(cleanupInterval);
+  }, []);
+
   const generateRoomId = () => {
     return Math.random().toString(36).substring(2, 8).toUpperCase();
   };
 
   const handleCreateRoom = async () => {
     if (!user || isCreating) return;
+    if (user.role === 'guest' && guestGamePlayed) {
+      alert("You have already played your free guest game. Please sign in with Google to continue playing!");
+      return;
+    }
     setIsCreating(true);
     try {
       const roomId = generateRoomId();
+      
+      const players: any = { [user.uid]: { uid: user.uid, displayName: user.displayName, photoURL: user.photoURL } };
+      const squads: any = { [user.uid]: [] };
+      const purses: any = { [user.uid]: 10000 };
+
       const newRoom: Room = {
         roomId,
+        title: `${user.displayName}'s Auction`,
         hostId: user.uid,
         playersCount: createOptions.players,
         revealTimer: createOptions.timer,
         isPublic: createOptions.isPublic,
         status: 'waiting',
-        players: { [user.uid]: { uid: user.uid, displayName: user.displayName, photoURL: user.photoURL } },
-        squads: { [user.uid]: [] },
-        purses: { [user.uid]: 10000 }, // ₹100 Crores = 10000 Lakhs
+        players,
+        squads,
+        purses,
         auctionedPlayerIds: [],
         skipVotes: [],
         createdAt: null
@@ -290,8 +446,63 @@ export default function App() {
     }
   };
 
+  const handlePlaySolo = async () => {
+    if (!user || isCreating) return;
+    if (user.role === 'guest' && guestGamePlayed) {
+      alert("You have already played your free guest game. Please sign in with Google to continue playing!");
+      return;
+    }
+    setIsCreating(true);
+    try {
+      const roomId = generateRoomId();
+      
+      // Solo mode: 1 human + 1 bot (total 2 players)
+      const players: any = { [user.uid]: { uid: user.uid, displayName: user.displayName, photoURL: user.photoURL } };
+      const squads: any = { [user.uid]: [] };
+      const purses: any = { [user.uid]: 10000 };
+
+      const botUid = `bot_${roomId}_1`;
+      const bot = { 
+        uid: botUid, 
+        displayName: `Expert Bot`, 
+        photoURL: `https://api.dicebear.com/7.x/bottts/svg?seed=${botUid}`, 
+        isBot: true 
+      };
+      players[bot.uid] = bot;
+      squads[bot.uid] = [];
+      purses[bot.uid] = 10000;
+
+      const newRoom: Room = {
+        roomId,
+        title: `${user.displayName}'s Solo Auction`,
+        hostId: user.uid,
+        playersCount: 2,
+        revealTimer: 10, // Faster timer for solo
+        isPublic: false,
+        status: 'active', // Start immediately
+        players,
+        squads,
+        purses,
+        auctionedPlayerIds: [],
+        skipVotes: [],
+        createdAt: null
+      };
+      await dbService.createRoom(newRoom);
+      setRoom(newRoom);
+    } catch (error) {
+      console.error('Failed to start solo game:', error);
+      alert('Failed to start solo game. Please try again.');
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
   const handleJoinRoomById = async (id: string) => {
     if (!user) return;
+    if (user.role === 'guest' && guestGamePlayed) {
+      alert("You have already played your free guest game. Please sign in with Google to continue playing!");
+      return;
+    }
     const existingRoom = await dbService.getRoom(id.toUpperCase());
     if (!existingRoom) {
       alert("Room not found!");
@@ -335,12 +546,27 @@ export default function App() {
     setRoom(null);
   };
 
-  const handleTerminateAuction = async () => {
-    if (!room || !user || room.hostId !== user.uid) return;
-    if (window.confirm("Are you sure you want to terminate this auction? This will end it for everyone.")) {
+  const handleVoteTerminate = async () => {
+    if (!room || !user) return;
+    const humanPlayers = (Object.values(room.players) as any[]).filter(p => !p.isBot);
+    
+    if (humanPlayers.length === 1) {
+      // Solo play: terminate immediately
       await dbService.terminateRoom(room.roomId);
+    } else {
+      await dbService.voteToTerminate(room.roomId, user.uid);
     }
   };
+
+  useEffect(() => {
+    if (room && room.status === 'active') {
+      const humanPlayers = (Object.values(room.players) as any[]).filter(p => !p.isBot);
+      const votes = room.terminateVotes || [];
+      if (votes.length >= humanPlayers.length && humanPlayers.length > 0) {
+        dbService.terminateRoom(room.roomId);
+      }
+    }
+  }, [room?.terminateVotes, room?.players, room?.status, room?.roomId]);
 
   if (loading) {
     return (
@@ -359,65 +585,179 @@ export default function App() {
   return (
     <div className={`min-h-screen ${isDarkMode ? 'bg-[#050505] text-white' : 'bg-slate-50 text-slate-900'} transition-colors duration-500`}>
       {!user ? (
-        <div className="min-h-screen flex flex-col items-center justify-center p-6 relative overflow-hidden">
+        <div className="min-h-screen flex flex-col items-center p-6 relative overflow-x-hidden">
           {/* Background Gradients */}
           <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-cyan-500/10 blur-[120px] rounded-full"></div>
           <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-purple-500/10 blur-[120px] rounded-full"></div>
 
           <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="w-full max-w-4xl relative z-10"
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            className="w-full max-w-6xl relative z-10 pt-12 md:pt-20"
           >
-            <div className="flex flex-col items-center">
-              <motion.div 
-                animate={{ rotate: [0, 10, -10, 0] }}
-                transition={{ duration: 4, repeat: Infinity }}
-                className="w-32 h-32 bg-gradient-to-br from-cyan-400 to-purple-600 rounded-[2.5rem] flex items-center justify-center mb-12 shadow-[0_0_50px_rgba(0,242,255,0.3)]"
-              >
-                <Trophy className="w-16 h-16 text-white" />
-              </motion.div>
-              
-              <h1 className="text-[10vw] md:text-[80px] font-black leading-[0.9] uppercase tracking-tighter text-center mb-8 font-display">
-                IPL Auction Simulator<br/>
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-purple-500 to-pink-500">
-                  Bid. Build. Win.
-                </span>
-              </h1>
-              
-              <p className="text-slate-500 font-bold uppercase tracking-[0.3em] text-xs md:text-sm mb-16 text-center max-w-lg">
-                The Ultimate Real-Time Multiplayer Experience for the Next Generation of Fans
-              </p>
-              
-              {loginError && (
-                <div className="max-w-md w-full p-6 rounded-3xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium text-center space-y-2 mb-8">
-                  <p>{loginError}</p>
-                  {loginError.includes('Authorized Domains') && (
-                    <p className="text-xs opacity-70">Go to Firebase Console &gt; Authentication &gt; Settings &gt; Authorized domains and add your current URL.</p>
-                  )}
-                </div>
-              )}
-
-              <motion.button 
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleLogin}
-                className="group relative px-12 py-6 rounded-[2rem] bg-white text-black font-black text-lg tracking-widest uppercase flex items-center gap-4 overflow-hidden"
-              >
-                <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-purple-600 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-                <span className="relative z-10 group-hover:text-white transition-colors">Sign in with Google</span>
-                <LogIn className="w-6 h-6 relative z-10 group-hover:text-white transition-colors" />
-              </motion.button>
-              
-              <div className="mt-24 flex flex-col items-center gap-6">
-                <a 
-                  href="mailto:divye0005@gmail.com?subject=IPL Auction Donation"
-                  className="text-[11px] font-black text-slate-500 uppercase tracking-[0.2em] hover:text-cyan-400 transition-all flex items-center gap-3 group"
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+              <div className="flex flex-col items-center lg:items-start">
+                <motion.div 
+                  animate={{ rotate: [0, 10, -10, 0] }}
+                  transition={{ duration: 4, repeat: Infinity }}
+                  className="w-20 h-20 bg-gradient-to-br from-cyan-400 to-purple-600 rounded-[1.5rem] flex items-center justify-center mb-8 shadow-[0_0_50px_rgba(0,242,255,0.3)]"
                 >
-                  <Mail className="w-4 h-4 group-hover:animate-bounce" />
-                  Support the developer
-                </a>
+                  <Trophy className="w-10 h-10 text-white" />
+                </motion.div>
+                
+                <h1 className="text-[12vw] lg:text-[80px] font-black leading-[0.9] uppercase tracking-tighter text-center lg:text-left mb-8 font-display">
+                  IPL Auction Simulator<br/>
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-purple-500 to-pink-500">
+                    Bid. Build. Win.
+                  </span>
+                </h1>
+                
+                <p className="text-slate-500 font-bold uppercase tracking-[0.3em] text-xs md:text-sm mb-12 text-center lg:text-left max-w-lg">
+                  The Ultimate Real-Time Multiplayer Experience for the Next Generation of Fans. Join thousands of players in the most realistic IPL auction simulation.
+                </p>
+                
+                <div className="flex flex-col sm:flex-row gap-4 w-full max-w-md">
+                  <motion.button 
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={handleLogin}
+                    className="flex-1 group relative px-8 py-5 rounded-2xl bg-white text-black font-black text-sm tracking-widest uppercase flex items-center justify-center gap-3 overflow-hidden shadow-2xl"
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-purple-600 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                    <span className="relative z-10 group-hover:text-white transition-colors">Sign in with Google</span>
+                    <LogIn className="w-5 h-5 relative z-10 group-hover:text-white transition-colors" />
+                  </motion.button>
+
+                  <motion.button 
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={handleGuestLogin}
+                    disabled={guestGamePlayed}
+                    className={`flex-1 px-8 py-5 rounded-2xl glass font-black text-sm tracking-widest uppercase flex items-center justify-center gap-3 transition-all ${guestGamePlayed ? 'opacity-50 grayscale cursor-not-allowed' : 'hover:bg-white/10 text-white'}`}
+                  >
+                    <span>{guestGamePlayed ? 'Guest Limit Reached' : 'Play as Guest'}</span>
+                    <Play className="w-5 h-5" />
+                  </motion.button>
+                </div>
+
+                {guestGamePlayed && (
+                  <p className="mt-4 text-[10px] font-black text-orange-400 uppercase tracking-widest">
+                    Free guest game used. Please sign in to continue!
+                  </p>
+                )}
+
+                {loginError && (
+                  <div className="mt-8 max-w-md w-full p-6 rounded-3xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium text-center space-y-2">
+                    <p>{loginError}</p>
+                  </div>
+                )}
+                <div className="mt-12 hidden lg:block">
+                  <div className="relative">
+                    <div className="absolute -inset-4 bg-gradient-to-r from-cyan-500 to-purple-600 rounded-[3rem] blur-2xl opacity-20 animate-pulse"></div>
+                    <div className="relative glass-dark rounded-[2.5rem] p-4 border border-white/10 scale-90 origin-left">
+                      <div className="flex items-center gap-4 mb-4">
+                        <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse"></div>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Live Preview</span>
+                      </div>
+                      <div className="flex gap-6">
+                        <div className="w-48 aspect-[3/4] rounded-3xl bg-gradient-to-br from-yellow-400 to-yellow-600 p-1">
+                          <div className="w-full h-full rounded-[1.4rem] bg-[#050505] overflow-hidden flex flex-col">
+                            <div className="h-1/2 bg-slate-800 relative">
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <Star className="w-12 h-12 text-yellow-400/20" />
+                              </div>
+                            </div>
+                            <div className="p-4 flex-1 flex flex-col justify-between">
+                              <div>
+                                <div className="h-4 w-24 bg-white/10 rounded mb-2"></div>
+                                <div className="h-2 w-12 bg-cyan-400/20 rounded"></div>
+                              </div>
+                              <div className="grid grid-cols-3 gap-2">
+                                <div className="h-6 bg-white/5 rounded"></div>
+                                <div className="h-6 bg-white/5 rounded"></div>
+                                <div className="h-6 bg-white/5 rounded"></div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex-1 space-y-4">
+                          <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
+                            <div className="text-[8px] font-black text-slate-500 uppercase mb-1">Current Bid</div>
+                            <div className="text-2xl font-black text-white">₹14.50 Cr</div>
+                          </div>
+                          <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
+                            <div className="text-[8px] font-black text-slate-500 uppercase mb-1">Highest Bidder</div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-6 h-6 rounded-full bg-purple-500/20"></div>
+                              <div className="h-2 w-16 bg-white/20 rounded"></div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-4">
+                  <div className="bento-item glass-dark p-6 group hover:border-cyan-400/50 transition-all">
+                    <div className="w-12 h-12 rounded-xl bg-cyan-500/10 flex items-center justify-center mb-4">
+                      <Zap className="w-6 h-6 text-cyan-400" />
+                    </div>
+                    <h3 className="text-lg font-black uppercase tracking-tight mb-2">Real-Time Bidding</h3>
+                    <p className="text-xs text-slate-500 font-bold leading-relaxed">Experience the thrill of a live auction with millisecond-precision bidding against friends or AI.</p>
+                  </div>
+                  <div className="bento-item glass-dark p-6 group hover:border-purple-400/50 transition-all">
+                    <div className="w-12 h-12 rounded-xl bg-purple-500/10 flex items-center justify-center mb-4">
+                      <MessageSquare className="w-6 h-6 text-purple-400" />
+                    </div>
+                    <h3 className="text-lg font-black uppercase tracking-tight mb-2">Live Chat</h3>
+                    <p className="text-xs text-slate-500 font-bold leading-relaxed">Sledge your opponents and discuss strategies in real-time with the built-in game chat.</p>
+                  </div>
+                </div>
+                <div className="space-y-4 pt-0 sm:pt-8">
+                  <div className="bento-item glass-dark p-6 group hover:border-orange-400/50 transition-all">
+                    <div className="w-12 h-12 rounded-xl bg-orange-500/10 flex items-center justify-center mb-4">
+                      <Star className="w-6 h-6 text-orange-400" />
+                    </div>
+                    <h3 className="text-lg font-black uppercase tracking-tight mb-2">Player Cards</h3>
+                    <p className="text-xs text-slate-500 font-bold leading-relaxed">Detailed player stats, auction scores, and high-quality visuals for over 200+ IPL stars.</p>
+                  </div>
+                  <div className="bento-item glass-dark p-6 group hover:border-green-400/50 transition-all">
+                    <div className="w-12 h-12 rounded-xl bg-green-500/10 flex items-center justify-center mb-4">
+                      <Shield className="w-6 h-6 text-green-400" />
+                    </div>
+                    <h3 className="text-lg font-black uppercase tracking-tight mb-2">Smart AI Bots</h3>
+                    <p className="text-xs text-slate-500 font-bold leading-relaxed">Challenge our advanced AI strategists that analyze budget and player quality like pro managers.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-20 grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                { label: 'Active Players', value: '10K+', icon: Users },
+                { label: 'Auctions Held', value: '50K+', icon: Trophy },
+                { label: 'Player Cards', value: '200+', icon: Sparkles },
+                { label: 'Avg Rating', value: '4.9/5', icon: Star },
+              ].map((stat, idx) => (
+                <div key={idx} className="p-6 rounded-3xl bg-white/5 border border-white/5 flex flex-col items-center text-center">
+                  <stat.icon className="w-5 h-5 text-slate-500 mb-3" />
+                  <div className="text-2xl font-black font-display text-white">{stat.value}</div>
+                  <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-1">{stat.label}</div>
+                </div>
+              ))}
+            </div>
+            
+            <div className="mt-24 flex flex-col items-center gap-6 pb-12">
+              <a 
+                href="mailto:divye0005@gmail.com?subject=IPL Auction Donation"
+                className="text-[11px] font-black text-slate-500 uppercase tracking-[0.2em] hover:text-cyan-400 transition-all flex items-center gap-3 group"
+              >
+                <Mail className="w-4 h-4 group-hover:animate-bounce" />
+                Support the developer
+              </a>
             </div>
           </motion.div>
         </div>
@@ -502,8 +842,7 @@ export default function App() {
                         <Award className="w-6 h-6 text-white" />
                       </div>
                     </div>
-                    
-                    {isEditingProfile ? (
+                                   {isEditingProfile ? (
                       <div className="w-full max-w-md space-y-6 mb-8">
                         <div className="flex flex-col items-start gap-2">
                           <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Username</label>
@@ -566,22 +905,40 @@ export default function App() {
                           </button>
                         </div>
                       </div>
+                    ) : showTutorial ? (
+                      <div className="w-full px-8 pb-8">
+                        <Tutorial onBack={() => setShowTutorial(false)} />
+                      </div>
                     ) : (
                       <>
                         <h2 className="text-4xl font-black uppercase tracking-tighter font-display mb-2">{user.displayName}</h2>
-                        <p className="text-slate-500 font-bold uppercase tracking-[0.3em] text-xs mb-8">{user.email}</p>
+                        <p className="text-slate-500 font-bold uppercase tracking-[0.3em] text-xs mb-8">{user.email || 'Guest Account'}</p>
 
-                        <div className="flex gap-4 mb-12">
+                        <div className="flex flex-wrap justify-center gap-4 mb-12">
+                          {user.role !== 'guest' ? (
+                            <button 
+                              onClick={() => {
+                                setEditName(user.displayName);
+                                setEditPhoto(user.photoURL || '');
+                                setIsEditingProfile(true);
+                              }}
+                              className="px-6 py-3 rounded-xl glass hover:bg-white/10 text-white text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2"
+                            >
+                              <UserIcon className="w-4 h-4" />
+                              Edit Profile
+                            </button>
+                          ) : (
+                            <div className="px-6 py-3 rounded-xl bg-orange-500/10 text-orange-400 text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+                              <Shield className="w-4 h-4" />
+                              Guest (No Editing)
+                            </div>
+                          )}
                           <button 
-                            onClick={() => {
-                              setEditName(user.displayName);
-                              setEditPhoto(user.photoURL || '');
-                              setIsEditingProfile(true);
-                            }}
-                            className="px-6 py-3 rounded-xl glass hover:bg-white/10 text-white text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2"
+                            onClick={() => setShowTutorial(true)}
+                            className="px-6 py-3 rounded-xl glass hover:bg-purple-500/10 text-purple-400 text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2"
                           >
-                            <UserIcon className="w-4 h-4" />
-                            Edit Profile
+                            <BookOpen className="w-4 h-4" />
+                            How to Play
                           </button>
                           <button 
                             onClick={testVoice}
@@ -632,7 +989,7 @@ export default function App() {
                       >
                         <div className="flex items-center justify-between mb-6">
                           <div className="flex flex-col">
-                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Room ID</span>
+                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">{r.title || `Room ${r.roomId}`}</span>
                             <span className="text-xl font-black font-display text-cyan-400">{r.roomId}</span>
                           </div>
                           <div className="flex -space-x-3">
@@ -679,14 +1036,42 @@ export default function App() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                 {/* Create Room Card */}
-                <div className="md:col-span-7 bento-item glass-dark relative overflow-hidden group">
+                <div className="md:col-span-12 bento-item glass-dark relative overflow-hidden group">
                   <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/5 blur-[80px] rounded-full -mr-32 -mt-32 group-hover:bg-cyan-500/10 transition-all duration-700"></div>
                   
-                  <h2 className="text-4xl font-black uppercase tracking-tighter mb-10 font-display">Create Room</h2>
+                  <div className="flex items-center justify-between mb-10">
+                    <h2 className="text-4xl font-black uppercase tracking-tighter font-display">Create Room</h2>
+                    <button 
+                      onClick={() => setShowHowToPlay(!showHowToPlay)}
+                      className="p-3 rounded-xl glass hover:bg-white/10 transition-all text-cyan-400 hover:text-white flex items-center gap-2 text-[10px] font-black uppercase tracking-widest"
+                    >
+                      <BookOpen className="w-4 h-4" />
+                      How to Play
+                    </button>
+                  </div>
+
+                  {showHowToPlay && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="mb-10 p-6 rounded-2xl bg-white/5 border border-cyan-500/20 text-slate-300 text-xs space-y-4 leading-relaxed"
+                    >
+                      <h3 className="text-cyan-400 font-black uppercase tracking-widest text-[10px]">How to IPL Auction</h3>
+                      <ol className="space-y-3 list-decimal list-inside font-bold">
+                        <li>Create room or join room from public or private room using your friends code.</li>
+                        <li>You can create a room of 2, 3, 5, 10 and if you're in a hurry you can reduce the bid time to 10 seconds.</li>
+                        <li>If you're playing alone, you can also create a room with bots. It's an IPL auction expert.</li>
+                        <li>Place bids and win to add that particular player to your dream team.</li>
+                        <li>The player with the highest total squad score wins the battle.</li>
+                        <li>You can choose dark theme or white theme in the profile section.</li>
+                        <li>You can also choose your name in the profile section.</li>
+                      </ol>
+                    </motion.div>
+                  )}
                   
                   <div className="space-y-10 mb-12">
                     <div className="flex flex-col">
-                      <span className="text-[11px] text-slate-500 uppercase font-black tracking-[0.2em] mb-4">Max Players</span>
+                      <span className="text-[12px] text-white uppercase font-black tracking-[0.2em] mb-4">Max Players</span>
                       <div className="flex gap-3">
                         {[2, 3, 5, 10].map(n => (
                           <button 
@@ -701,7 +1086,7 @@ export default function App() {
                     </div>
 
                     <div className="flex flex-col">
-                      <span className="text-[11px] text-slate-500 uppercase font-black tracking-[0.2em] mb-4">Bid Timer</span>
+                      <span className="text-[12px] text-white uppercase font-black tracking-[0.2em] mb-4">Bid Timer</span>
                       <div className="flex gap-3">
                         {[10, 15, 20].map(n => (
                           <button 
@@ -716,7 +1101,7 @@ export default function App() {
                     </div>
                     
                     <div className="flex flex-col">
-                      <span className="text-[11px] text-slate-500 uppercase font-black tracking-[0.2em] mb-4">Room Visibility</span>
+                      <span className="text-[12px] text-white uppercase font-black tracking-[0.2em] mb-4">Room Visibility</span>
                       <div className="flex gap-3">
                         {[true, false].map(v => (
                           <button 
@@ -731,18 +1116,33 @@ export default function App() {
                     </div>
                   </div>
 
-                  <button 
-                    onClick={handleCreateRoom}
-                    disabled={isCreating}
-                    className="w-full py-6 rounded-[1.5rem] bg-gradient-to-r from-cyan-400 to-purple-600 text-white font-black text-lg tracking-widest uppercase flex items-center justify-center gap-4 shadow-2xl hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isCreating ? (
-                      <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    ) : (
-                      <Plus className="w-6 h-6" />
-                    )}
-                    {isCreating ? 'Launching...' : 'Launch Auction'}
-                  </button>
+                  <div className="flex flex-col gap-4">
+                    <button 
+                      onClick={handleCreateRoom}
+                      disabled={isCreating}
+                      className="w-full py-6 rounded-[1.5rem] bg-gradient-to-r from-cyan-400 to-purple-600 text-white font-black text-lg md:text-xl tracking-widest uppercase flex items-center justify-center gap-4 shadow-[0_0_30px_rgba(34,211,238,0.3)] hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isCreating ? (
+                        <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      ) : (
+                        <Plus className="w-6 h-6" />
+                      )}
+                      {isCreating ? 'Launching...' : 'Create Multiplayer Room'}
+                    </button>
+
+                    <button 
+                      onClick={handlePlaySolo}
+                      disabled={isCreating}
+                      className="w-full py-6 rounded-[1.5rem] bg-gradient-to-r from-yellow-400 via-orange-500 to-red-600 text-white font-black text-lg md:text-xl tracking-widest uppercase flex items-center justify-center gap-4 shadow-[0_0_30px_rgba(245,158,11,0.3)] hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isCreating ? (
+                        <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      ) : (
+                        <Play className="w-6 h-6 fill-current" />
+                      )}
+                      {isCreating ? 'Starting...' : 'Play Solo'}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Join Room Card */}
@@ -836,10 +1236,12 @@ export default function App() {
             <AuctionGameplay 
               room={room} 
               user={user} 
+              setRoom={setRoom}
               allPlayers={IPL_PLAYERS} 
               isMuted={isMuted}
+              onToggleMute={() => setIsMuted(!isMuted)}
               onQuit={() => setRoom(null)} 
-              onTerminate={room.hostId === user.uid ? handleTerminateAuction : undefined}
+              onVoteTerminate={handleVoteTerminate}
             />
           ) : (
             <ResultsScreen room={room} user={user} allPlayers={IPL_PLAYERS} onHome={() => setRoom(null)} />
@@ -850,6 +1252,38 @@ export default function App() {
           )}
         </div>
       )}
+
+      {/* Beta Error Modal */}
+      <AnimatePresence>
+        {showBetaError && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="w-full max-w-md glass-dark p-8 rounded-[2.5rem] border border-red-500/20 text-center"
+            >
+              <div className="w-20 h-20 bg-red-500/10 rounded-3xl flex items-center justify-center mx-auto mb-6">
+                <AlertCircle className="w-10 h-10 text-red-500" />
+              </div>
+              <h2 className="text-2xl font-black uppercase tracking-tight mb-4">System Interruption</h2>
+              <p className="text-slate-400 font-bold mb-8">
+                Sorry for interruption we are in beta phase now.
+              </p>
+              <button 
+                onClick={() => setShowBetaError(false)}
+                className="w-full py-4 rounded-2xl bg-white/5 hover:bg-white/10 text-white font-black uppercase tracking-widest transition-all"
+              >
+                Dismiss
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

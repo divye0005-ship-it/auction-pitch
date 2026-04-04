@@ -3,7 +3,7 @@ export interface UserProfile {
   displayName: string;
   photoURL?: string;
   email: string;
-  role: 'admin' | 'user';
+  role: 'admin' | 'user' | 'guest';
   totalWinnings: number;
   createdAt: any;
 }
@@ -32,6 +32,7 @@ export interface Player {
 
 export interface Room {
   roomId: string;
+  title?: string;
   hostId: string;
   playersCount: number;
   revealTimer: number;
@@ -46,6 +47,7 @@ export interface Room {
   purses: { [userId: string]: number };
   auctionedPlayerIds: string[];
   skipVotes: string[];
+  terminateVotes?: string[];
   createdAt: any;
 }
 

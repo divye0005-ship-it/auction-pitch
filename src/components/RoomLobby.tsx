@@ -59,7 +59,7 @@ const RoomLobby: React.FC<RoomLobbyProps> = ({ room, user, onLeave }) => {
         <div className="md:col-span-12 bento-item glass-dark flex flex-col md:flex-row items-center justify-between gap-8">
           <div className="flex items-center gap-8">
             <div className="flex flex-col">
-              <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-2">Room Code</span>
+              <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-2">{room.title || 'Room Code'}</span>
               <div className="flex items-center gap-4">
                 <div className="text-5xl font-black font-display tracking-widest text-cyan-400">{room.roomId}</div>
                 <button 

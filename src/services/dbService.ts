@@ -1,4 +1,4 @@
-import { db, auth } from '../firebase';
+import { db, auth, runTransaction, increment, arrayUnion } from '../firebase';
 import { 
   doc, getDoc, setDoc, collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, getDocs, serverTimestamp 
 } from 'firebase/firestore';
@@ -124,6 +124,7 @@ export const dbService = {
       const querySnapshot = await getDocs(q);
       return querySnapshot.docs
         .map(doc => doc.data() as UserProfile)
+        .filter(user => user.role !== 'guest')
         .sort((a, b) => (b.totalWinnings || 0) - (a.totalWinnings || 0));
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, 'users');
@@ -149,6 +150,28 @@ export const dbService = {
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `rooms/${roomId}`);
+    }
+  },
+
+  async voteToTerminate(roomId: string, userId: string): Promise<void> {
+    try {
+      const roomRef = doc(db, 'rooms', roomId);
+      await updateDoc(roomRef, {
+        terminateVotes: arrayUnion(userId)
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `rooms/${roomId}/terminate`);
+    }
+  },
+
+  async voteToSkip(roomId: string, userId: string): Promise<void> {
+    try {
+      const roomRef = doc(db, 'rooms', roomId);
+      await updateDoc(roomRef, {
+        skipVotes: arrayUnion(userId)
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `rooms/${roomId}/skip`);
     }
   },
 
@@ -237,9 +260,8 @@ export const dbService = {
     }
   },
 
-  async bidOnPlayer(roomId: string, userId: string, amount: number, revealTimer: number, basePrice: number): Promise<void> {
+  async bidOnPlayer(roomId: string, userId: string, amount: number, revealTimer: number, basePrice: number, retryCount = 0): Promise<void> {
     try {
-      const { runTransaction } = await import('firebase/firestore');
       const roomRef = doc(db, 'rooms', roomId);
 
       await runTransaction(db, async (transaction) => {
@@ -264,7 +286,8 @@ export const dbService = {
         if (finalAmount > userPurse) throw new Error('Insufficient funds');
 
         // Check if timer has expired (using local time as proxy, but transaction helps)
-        if (roomData.timerEnd && Date.now() > roomData.timerEnd + 1000) {
+        // We allow a 5-second grace period to account for clock skew between clients
+        if (roomData.timerEnd && Date.now() > roomData.timerEnd + 5000) {
           throw new Error('Auction already ended');
         }
 
@@ -275,19 +298,33 @@ export const dbService = {
         });
       });
     } catch (error: any) {
-      // Don't use handleFirestoreError for business logic errors
+      // Don't use handleFirestoreError for business logic errors or contention
+      const msg = (error instanceof Error ? error.message : String(error)) || '';
+      const isContention = msg.toLowerCase().includes('stored version') || msg.toLowerCase().includes('does not match');
       const businessLogicErrors = ['Bid too low', 'Insufficient funds', 'Auction already ended', 'Room not found', 'No player being auctioned'];
-      if (businessLogicErrors.includes(error.message)) {
+      
+      if (isContention && retryCount < 3) {
+        // Wait a small random amount and retry
+        await new Promise(r => setTimeout(r, 50 + Math.random() * 100));
+        return this.bidOnPlayer(roomId, userId, amount, revealTimer, basePrice, retryCount + 1);
+      }
+
+      if (businessLogicErrors.includes(error.message) || isContention) {
+        if (isContention) {
+          // If it's a contention error, it means all internal and manual retries failed.
+          // We throw a user-friendly message.
+          throw new Error('Someone else bid just before you! Please try again.');
+        }
         throw error;
       }
       handleFirestoreError(error, OperationType.UPDATE, `rooms/${roomId}/bid`);
     }
   },
 
-  async skipPlayer(roomId: string, playerId: string, auctionedPlayerIds: string[]): Promise<void> {
+  async skipPlayer(roomId: string, playerId: string): Promise<void> {
     try {
       await updateDoc(doc(db, 'rooms', roomId), {
-        auctionedPlayerIds: [...auctionedPlayerIds, playerId],
+        auctionedPlayerIds: arrayUnion(playerId),
         currentPlayerId: null,
         currentBidAmount: 0,
         currentBidderId: null,
@@ -353,7 +390,6 @@ export const dbService = {
 
   async completeAuction(roomId: string, playerId: string, score: number): Promise<void> {
     try {
-      const { runTransaction, arrayUnion, increment } = await import('firebase/firestore');
       const roomRef = doc(db, 'rooms', roomId);
 
       const winnerInfo = await runTransaction(db, async (transaction) => {
@@ -405,8 +441,47 @@ export const dbService = {
           console.warn("Failed to update user winnings, but player was claimed:", err);
         }
       }
-    } catch (error) {
+    } catch (error: any) {
+      const msg = (error instanceof Error ? error.message : String(error)) || '';
+      if (msg.toLowerCase().includes('stored version') || msg.toLowerCase().includes('does not match')) {
+        // Silently fail or log as warning - this just means another client already completed the auction
+        console.warn("Auction completion conflict (expected):", msg);
+        return;
+      }
       handleFirestoreError(error, OperationType.UPDATE, `rooms/${roomId}/complete`);
+    }
+  },
+
+  async cleanupEmptyRooms(): Promise<void> {
+    try {
+      const roomsRef = collection(db, 'rooms');
+      const q = query(roomsRef, where('status', '==', 'waiting'));
+      const querySnapshot = await getDocs(q);
+      
+      const now = Date.now();
+      const thirtyMinutesInMs = 30 * 60 * 1000;
+      
+      const { writeBatch } = await import('firebase/firestore');
+      const batch = writeBatch(db);
+      let deletedCount = 0;
+
+      querySnapshot.forEach((docSnap) => {
+        const room = docSnap.data() as Room;
+        const createdAt = room.createdAt?.toMillis ? room.createdAt.toMillis() : 0;
+        const playersCount = Object.keys(room.players || {}).length;
+
+        if (playersCount === 0 && (now - createdAt) > thirtyMinutesInMs) {
+          batch.delete(docSnap.ref);
+          deletedCount++;
+        }
+      });
+
+      if (deletedCount > 0) {
+        await batch.commit();
+        console.log(`Cleaned up ${deletedCount} empty rooms.`);
+      }
+    } catch (error) {
+      console.warn("Room cleanup failed (likely due to security rules or network):", error);
     }
   }
 };

@@ -43,7 +43,7 @@ const AuctionCard: React.FC<AuctionCardProps> = ({ player, isRevealed }) => {
           <div className="h-1/2 relative overflow-hidden">
             <img 
               src={player.photoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=random&size=512`} 
-              className="w-full h-full object-cover"
+              className="w-full h-full object-cover object-top"
               alt={player.name}
               referrerPolicy="no-referrer"
             />
