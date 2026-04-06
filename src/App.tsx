@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged, signInAnonymously } from './firebase';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
 import { dbService } from './services/dbService';
 import { IPL_PLAYERS } from './services/playerData';
 import { UserProfile, Room, Player } from './types';
@@ -10,7 +10,7 @@ import AuctionGameplay from './components/AuctionGameplay';
 import ResultsScreen from './components/ResultsScreen';
 import ChatPanel from './components/ChatPanel';
 import Leaderboard from './components/Leaderboard';
-import { Trophy, Plus, Users, LogIn, LogOut, Sun, Moon, Mail, ChevronRight, Play, LayoutDashboard, User as UserIcon, ArrowLeft, Award, Volume2, VolumeX, Zap, MessageSquare, Shield, Sparkles, Star, BookOpen, Info, HelpCircle, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Trophy, Plus, Users, LogIn, LogOut, Sun, Moon, Mail, ChevronRight, Play, LayoutDashboard, User as UserIcon, ArrowLeft, Award, Volume2, VolumeX, Zap, MessageSquare, Shield, Sparkles, Star, BookOpen, Info, HelpCircle, CheckCircle2, AlertCircle, Instagram, Send, Trash2 } from 'lucide-react';
 
 const Tutorial = ({ onBack }: { onBack: () => void }) => {
   const steps = [
@@ -107,6 +107,8 @@ export default function App() {
     return saved ? JSON.parse(saved) : false;
   });
   const [showBetaError, setShowBetaError] = useState(false);
+  const [resumableRoom, setResumableRoom] = useState<Room | null>(null);
+  const [deletingRoomId, setDeletingRoomId] = useState<string | null>(null);
 
   useEffect(() => {
     const handleError = (event: ErrorEvent | PromiseRejectionEvent) => {
@@ -243,6 +245,24 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!user || room) {
+      setResumableRoom(null);
+      return;
+    }
+
+    const roomsRef = collection(db, 'rooms');
+    const q = query(roomsRef, where('status', 'in', ['waiting', 'active']));
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const activeRooms = snapshot.docs.map(doc => doc.data() as Room);
+      const myRoom = activeRooms.find(r => r.players && r.players[user.uid]);
+      setResumableRoom(myRoom || null);
+    });
+
+    return () => unsubscribe();
+  }, [user, room]);
+
+  useEffect(() => {
     if (room?.roomId) {
       const unsubscribe = dbService.subscribeToRoom(room.roomId, (updatedRoom) => {
         setRoom(updatedRoom);
@@ -376,6 +396,27 @@ export default function App() {
       } else {
         setLoginError('Guest login failed: ' + (error.message || 'Unknown error'));
       }
+    }
+  };
+
+  const isAdmin = (user?.email === 'divye0005@gmail.com') || (auth.currentUser?.email === 'divye0005@gmail.com');
+
+  const handleDeleteRoom = async (roomId: string) => {
+    if (!isAdmin) return;
+    setDeletingRoomId(roomId);
+  };
+
+  const confirmDeleteRoom = async () => {
+    if (!deletingRoomId) return;
+    
+    try {
+      await dbService.deleteRoom(deletingRoomId);
+      setPublicRooms(prev => prev.filter(r => r.roomId !== deletingRoomId));
+      setDeletingRoomId(null);
+    } catch (error) {
+      console.error("Failed to delete room:", error);
+      alert("Failed to delete room.");
+      setDeletingRoomId(null);
     }
   };
 
@@ -992,15 +1033,29 @@ export default function App() {
                             <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">{r.title || `Room ${r.roomId}`}</span>
                             <span className="text-xl font-black font-display text-cyan-400">{r.roomId}</span>
                           </div>
-                          <div className="flex -space-x-3">
-                            {(Object.values(r.players) as any[]).slice(0, 3).map((p, i) => (
-                              <img key={i} src={p.photoURL} className="w-8 h-8 rounded-full border-2 border-[#050505]" alt="" />
-                            ))}
-                            {Object.values(r.players).length > 3 && (
-                              <div className="w-8 h-8 rounded-full bg-slate-800 border-2 border-[#050505] flex items-center justify-center text-[10px] font-black">
-                                +{Object.values(r.players).length - 3}
-                              </div>
+                          <div className="flex items-center gap-2">
+                            {isAdmin && (
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteRoom(r.roomId);
+                                }}
+                                className="p-2 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all z-20"
+                                title="Delete Room (Admin Only)"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
                             )}
+                            <div className="flex -space-x-3">
+                              {(Object.values(r.players) as any[]).slice(0, 3).map((p, i) => (
+                                <img key={i} src={p.photoURL} className="w-8 h-8 rounded-full border-2 border-[#050505]" alt="" />
+                              ))}
+                              {Object.values(r.players).length > 3 && (
+                                <div className="w-8 h-8 rounded-full bg-slate-800 border-2 border-[#050505] flex items-center justify-center text-[10px] font-black">
+                                  +{Object.values(r.players).length - 3}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
                         
@@ -1035,6 +1090,37 @@ export default function App() {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                {/* Resume Room Card */}
+                <AnimatePresence>
+                  {resumableRoom && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: -20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -20 }}
+                      className="md:col-span-12 bento-item bg-gradient-to-r from-cyan-500/20 to-purple-600/20 border-cyan-400/30 relative overflow-hidden group"
+                    >
+                      <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                        <div className="flex items-center gap-6">
+                          <div className="w-16 h-16 rounded-2xl bg-cyan-500/20 flex items-center justify-center">
+                            <Zap className="w-8 h-8 text-cyan-400 animate-pulse" />
+                          </div>
+                          <div className="text-left">
+                            <span className="text-[10px] font-black text-cyan-400 uppercase tracking-[0.3em] mb-1 block">Active Session Found</span>
+                            <h3 className="text-2xl font-black uppercase tracking-tight text-white">Resume Your Auction</h3>
+                            <p className="text-slate-400 font-bold text-xs">Room: {resumableRoom.roomId} • {Object.keys(resumableRoom.players).length} Players</p>
+                          </div>
+                        </div>
+                        <button 
+                          onClick={() => setRoom(resumableRoom)}
+                          className="w-full md:w-auto px-10 py-4 rounded-2xl bg-cyan-400 text-black font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-[0_0_30px_rgba(34,211,238,0.4)]"
+                        >
+                          Resume Now
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
                 {/* Create Room Card */}
                 <div className="md:col-span-12 bento-item glass-dark relative overflow-hidden group">
                   <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/5 blur-[80px] rounded-full -mr-32 -mt-32 group-hover:bg-cyan-500/10 transition-all duration-700"></div>
@@ -1218,7 +1304,30 @@ export default function App() {
             </div>
           </div>
 
-          <div className="mt-20 text-center pb-12">
+          <div className="mt-20 text-center pb-12 flex flex-col items-center gap-6">
+             <div className="flex flex-col items-center gap-6">
+               <div className="flex flex-wrap justify-center gap-4">
+                 <a 
+                   href="https://www.instagram.com/divyay_18" 
+                   target="_blank" 
+                   rel="noopener noreferrer"
+                   className="px-6 py-3 rounded-2xl bg-white/5 hover:bg-pink-500/20 hover:text-pink-500 transition-all text-slate-300 flex items-center gap-3 border border-white/5"
+                 >
+                   <Instagram className="w-5 h-5" />
+                   <span className="text-xs font-black uppercase tracking-widest">Join Us</span>
+                 </a>
+                 <a 
+                   href="https://t.me/+SFengSbGUOUyNmQ1" 
+                   target="_blank" 
+                   rel="noopener noreferrer"
+                   className="px-6 py-3 rounded-2xl bg-white/5 hover:bg-blue-500/20 hover:text-blue-500 transition-all text-slate-300 flex items-center gap-3 border border-white/5"
+                 >
+                   <Send className="w-5 h-5" />
+                   <span className="text-xs font-black uppercase tracking-widest">Join Us</span>
+                 </a>
+               </div>
+             </div>
+             
              <a 
                 href="mailto:divye0005@gmail.com?subject=IPL Auction Donation"
                 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.2em] hover:text-cyan-400 transition-all flex items-center justify-center gap-3"
@@ -1252,6 +1361,46 @@ export default function App() {
           )}
         </div>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {deletingRoomId && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="w-full max-w-md glass-dark p-8 rounded-[2.5rem] border border-red-500/20 text-center"
+            >
+              <div className="w-20 h-20 rounded-3xl bg-red-500/10 flex items-center justify-center mx-auto mb-6">
+                <Trash2 className="w-10 h-10 text-red-500" />
+              </div>
+              <h3 className="text-2xl font-black uppercase tracking-tight text-white mb-2">Delete Room?</h3>
+              <p className="text-slate-400 font-bold text-sm mb-8">Are you sure you want to delete room <span className="text-red-400">{deletingRoomId}</span>? This action cannot be undone.</p>
+              
+              <div className="flex flex-col sm:flex-row gap-3">
+                <button 
+                  onClick={() => setDeletingRoomId(null)}
+                  className="flex-1 py-4 rounded-2xl glass hover:bg-white/10 transition-all text-xs font-black uppercase tracking-widest"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={confirmDeleteRoom}
+                  className="flex-1 py-4 rounded-2xl bg-red-500 text-white font-black uppercase tracking-widest hover:bg-red-600 transition-all shadow-[0_0_20px_rgba(239,68,68,0.3)]"
+                >
+                  Delete Now
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Beta Error Modal */}
       <AnimatePresence>

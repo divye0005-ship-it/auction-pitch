@@ -16,17 +16,25 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ roomId, userId, userName }) => {
   const [inputText, setInputText] = useState('');
   const [unreadCount, setUnreadCount] = useState(0);
   const [reactions, setReactions] = useState<{ id: number, emoji: string }[]>([]);
+  const [previewMessage, setPreviewMessage] = useState<Message | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const unsubscribe = dbService.subscribeToMessages(roomId, (msgs) => {
-      setMessages(msgs);
-      if (!isOpen) {
-        setUnreadCount(prev => prev + 1);
+      const lastMsg = msgs[msgs.length - 1];
+      
+      // Only show preview and count if it's a new message and not from current user
+      if (msgs.length > messages.length && lastMsg && lastMsg.userId !== userId) {
+        if (!isOpen) {
+          setUnreadCount(prev => prev + 1);
+          setPreviewMessage(lastMsg);
+          setTimeout(() => setPreviewMessage(null), 2000);
+        }
       }
+      setMessages(msgs);
     });
     return () => unsubscribe();
-  }, [roomId, isOpen]);
+  }, [roomId, isOpen, messages.length, userId]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -79,22 +87,53 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ roomId, userId, userName }) => {
         </AnimatePresence>
       </div>
 
-      {/* Chat Toggle Button */}
-      <button
-        onClick={() => {
-          setIsOpen(!isOpen);
-          setUnreadCount(0);
-        }}
-        className="fixed bottom-6 right-6 z-50 w-16 h-16 rounded-2xl glass-dark border-cyan-400/30 text-cyan-400 shadow-[0_0_30px_rgba(34,211,238,0.2)] flex items-center justify-center hover:scale-110 active:scale-95 transition-all group overflow-hidden"
-      >
-        <div className="absolute inset-0 bg-gradient-to-br from-cyan-400/10 to-purple-600/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-        {isOpen ? <X className="w-7 h-7 relative z-10" /> : <MessageSquare className="w-7 h-7 relative z-10" />}
-        {!isOpen && unreadCount > 0 && (
-          <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-black w-6 h-6 rounded-full flex items-center justify-center border-2 border-slate-950 animate-bounce">
-            {unreadCount}
-          </span>
+      {/* Message Preview Toast */}
+      <AnimatePresence>
+        {!isOpen && previewMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: 20, x: 20, scale: 0.8 }}
+            animate={{ opacity: 1, y: 0, x: 0, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8, transition: { duration: 0.2 } }}
+            className="fixed bottom-24 right-6 z-[60] max-w-[200px]"
+          >
+            <div className="bg-cyan-500 text-black px-4 py-2 rounded-full shadow-[0_0_20px_rgba(34,211,238,0.4)] border border-cyan-400/50 flex items-center gap-2 overflow-hidden">
+              <div className="flex flex-col min-w-0">
+                <span className="text-[8px] font-black uppercase tracking-tighter opacity-70 truncate">{previewMessage.userName}</span>
+                <p className="text-[10px] font-bold truncate leading-tight">{previewMessage.text}</p>
+              </div>
+            </div>
+          </motion.div>
         )}
-      </button>
+      </AnimatePresence>
+
+      {/* Chat Toggle Button */}
+      <AnimatePresence>
+        {!isOpen && (
+          <motion.button
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0, opacity: 0 }}
+            onClick={() => {
+              setIsOpen(true);
+              setUnreadCount(0);
+              setPreviewMessage(null);
+            }}
+            className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full glass-dark border-cyan-400/30 text-cyan-400 shadow-[0_0_30px_rgba(34,211,238,0.2)] flex items-center justify-center hover:scale-110 active:scale-95 transition-all group overflow-hidden"
+          >
+            <div className="absolute inset-0 bg-gradient-to-br from-cyan-400/10 to-purple-600/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+            <MessageSquare className="w-6 h-6 relative z-10" />
+            {unreadCount > 0 && (
+              <motion.span 
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center border-2 border-slate-950 shadow-lg z-20"
+              >
+                {unreadCount}
+              </motion.span>
+            )}
+          </motion.button>
+        )}
+      </AnimatePresence>
 
       {/* Chat Panel */}
       <AnimatePresence>

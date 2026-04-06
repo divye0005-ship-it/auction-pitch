@@ -306,7 +306,10 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, setRoom, 
           const timeUrgency = timeLeft <= 2 ? 0.99 : timeLeft <= 5 ? 0.85 : squadUrgency;
           
           // Only bid if not already the highest bidder and within valuation
-          if (botSquad.length < 25 && currentBidderId !== bot.uid && currentBid < valuation && botPurse > currentBid + 50) {
+          const nextBid = getNextBidAmount(currentBid, currentPlayer.basePrice);
+          const maxBidLimit = 2000; // 20 Crores limit as requested
+
+          if (botSquad.length < 25 && currentBidderId !== bot.uid && currentBid < valuation && nextBid <= maxBidLimit && botPurse > currentBid + 50) {
             // Higher probability of bidding if valuation is much higher than current bid
             const valuationGap = (valuation - currentBid) / valuation;
             let bidProbability = Math.max(timeUrgency * 0.4, valuationGap * 0.8);
@@ -315,7 +318,6 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, setRoom, 
             if (Math.random() > 0.6) bidProbability *= 0.4;
 
             if (Math.random() < bidProbability) { 
-              const nextBid = getNextBidAmount(currentBid, currentPlayer.basePrice);
               if (botPurse >= nextBid) {
                 dbService.bidOnPlayer(room.roomId, bot.uid, nextBid, room.revealTimer, currentPlayer.basePrice)
                   .catch(err => console.log("Bot bid failed (likely race condition):", err.message));

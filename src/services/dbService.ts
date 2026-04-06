@@ -483,5 +483,13 @@ export const dbService = {
     } catch (error) {
       console.warn("Room cleanup failed (likely due to security rules or network):", error);
     }
+  },
+
+  async deleteRoom(roomId: string): Promise<void> {
+    try {
+      await deleteDoc(doc(db, 'rooms', roomId));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `rooms/${roomId}`);
+    }
   }
 };
