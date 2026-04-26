@@ -58,7 +58,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ roomId, userId, userName }) => {
   };
 
   const handleReaction = (emoji: string) => {
-    const id = Date.now();
+    const id = Date.now() + Math.random();
     setReactions(prev => [...prev, { id, emoji }]);
     setTimeout(() => {
       setReactions(prev => prev.filter(r => r.id !== id));
@@ -159,8 +159,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ roomId, userId, userName }) => {
             </div>
 
             <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-hide">
-              {messages.map((msg, i) => (
-                <div key={i} className={`flex flex-col ${msg.userId === userId ? 'items-end' : 'items-start'}`}>
+              {messages.map((msg) => (
+                <div key={msg.id} className={`flex flex-col ${msg.userId === userId ? 'items-end' : 'items-start'}`}>
                   <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2 px-1">{msg.userName}</span>
                   <div className={`px-4 py-3 rounded-2xl max-w-[90%] text-sm font-medium leading-relaxed shadow-lg ${
                     msg.userId === userId 

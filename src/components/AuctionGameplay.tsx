@@ -6,6 +6,8 @@ import AuctionCard from './AuctionCard';
 import { getNextBidAmount } from '../lib/auctionUtils';
 import { Zap, Plus, Timer as TimerIcon, Wallet, Users, SkipForward, Trophy, TrendingUp, Volume2, VolumeX } from 'lucide-react';
 
+
+
 interface AuctionGameplayProps {
   room: Room;
   user: UserProfile;
@@ -17,7 +19,18 @@ interface AuctionGameplayProps {
   onVoteTerminate: () => void;
 }
 
-const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, setRoom, allPlayers, isMuted, onToggleMute, onQuit, onVoteTerminate }) => {
+const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ 
+  room, 
+  user, 
+  setRoom, 
+  allPlayers, 
+  isMuted, 
+  onToggleMute, 
+  onQuit, 
+  onVoteTerminate
+}) => {
+
+
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [isEnding, setIsEnding] = useState(false);
   const [timeLeft, setTimeLeft] = useState(room.revealTimer);
@@ -401,8 +414,9 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, setRoom, 
           {/* Skip Button */}
           <div className="w-full flex flex-col gap-3">
             {/* Mobile Bid Button */}
-            <div className="lg:hidden w-full">
+            <div className="lg:hidden w-full relative">
               <button 
+                id="tour-bid-button-mobile"
                 onClick={handleBid}
                 disabled={currentBidderId === user.uid || myPurse < getNextBidAmount(currentBid, currentPlayer?.basePrice || 50)}
                 className={`w-full py-5 rounded-2xl bg-gradient-to-r from-cyan-400 to-purple-600 text-white font-black text-lg tracking-widest uppercase flex items-center justify-center gap-3 shadow-2xl active:scale-[0.98] disabled:opacity-50 disabled:grayscale transition-all ${currentBidderId === user.uid ? 'cursor-not-allowed' : ''}`}
@@ -410,6 +424,7 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, setRoom, 
                 <Plus className="w-6 h-6" />
                 {currentBidderId === user.uid ? 'Waiting...' : `Bid ₹${getNextBidAmount(currentBid, currentPlayer?.basePrice || 50)}L`}
               </button>
+
             </div>
 
             <button 
@@ -485,14 +500,18 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, setRoom, 
                   </div>
               
               {/* Desktop Bid Button */}
-              <button 
-                onClick={handleBid}
-                disabled={currentBidderId === user.uid || myPurse < getNextBidAmount(currentBid, currentPlayer?.basePrice || 50)}
-                className={`hidden lg:flex w-full py-5 md:py-6 rounded-[1.5rem] bg-gradient-to-r from-cyan-400 to-purple-600 text-white font-black text-lg md:text-xl tracking-widest uppercase items-center justify-center gap-3 md:gap-4 shadow-2xl hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:grayscale transition-all ${currentBidderId === user.uid ? 'cursor-not-allowed' : ''}`}
-              >
-                <Plus className="w-6 h-6 md:w-8 md:h-8" />
-                {currentBidderId === user.uid ? 'Waiting...' : `Bid ₹${getNextBidAmount(currentBid, currentPlayer?.basePrice || 50)}L`}
-              </button>
+              <div className="relative w-full">
+                <button 
+                  id="tour-bid-button-desktop"
+                  onClick={handleBid}
+                  disabled={currentBidderId === user.uid || myPurse < getNextBidAmount(currentBid, currentPlayer?.basePrice || 50)}
+                  className={`hidden lg:flex w-full py-5 md:py-6 rounded-[1.5rem] bg-gradient-to-r from-cyan-400 to-purple-600 text-white font-black text-lg md:text-xl tracking-widest uppercase items-center justify-center gap-3 md:gap-4 shadow-2xl hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:grayscale transition-all ${currentBidderId === user.uid ? 'cursor-not-allowed' : ''}`}
+                >
+                  <Plus className="w-6 h-6 md:w-8 md:h-8" />
+                  {currentBidderId === user.uid ? 'Waiting...' : `Bid ₹${getNextBidAmount(currentBid, currentPlayer?.basePrice || 50)}L`}
+                </button>
+
+              </div>
             </div>
 
             <div className="bento-item glass-dark p-6">
@@ -634,6 +653,7 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, setRoom, 
           </motion.div>
         )}
       </AnimatePresence>
+
     </div>
   );
 };

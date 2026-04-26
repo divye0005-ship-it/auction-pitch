@@ -10,90 +10,9 @@ import AuctionGameplay from './components/AuctionGameplay';
 import ResultsScreen from './components/ResultsScreen';
 import ChatPanel from './components/ChatPanel';
 import Leaderboard from './components/Leaderboard';
-import { Trophy, Plus, Users, LogIn, LogOut, Sun, Moon, Mail, ChevronRight, Play, LayoutDashboard, User as UserIcon, ArrowLeft, Award, Volume2, VolumeX, Zap, MessageSquare, Shield, Sparkles, Star, BookOpen, Info, HelpCircle, CheckCircle2, AlertCircle, Instagram, Send, Trash2, ExternalLink, Wallet, TrendingUp, ShieldCheck, X } from 'lucide-react';
+import { Trophy, Plus, Users, LogIn, LogOut, Sun, Moon, Mail, ChevronRight, Play, LayoutDashboard, User as UserIcon, ArrowLeft, Award, Volume2, VolumeX, Zap, MessageSquare, Shield, Sparkles, Star, BookOpen, Info, HelpCircle, CheckCircle2, AlertCircle, Instagram, Send, Trash2, ExternalLink, Wallet, TrendingUp, ShieldCheck, X, Share2, Copy, Check } from 'lucide-react';
 
-const Tutorial = ({ onBack }: { onBack: () => void }) => {
-  const steps = [
-    {
-      title: "Join or Create",
-      description: "Start by creating a private room for friends or join a public auction to compete with the community.",
-      icon: Plus,
-      color: "text-cyan-400",
-      bg: "bg-cyan-500/10"
-    },
-    {
-      title: "The Bidding War",
-      description: "Players are revealed one by one. Use your budget wisely! Each bid increases the price. Don't let your dream player go to a rival.",
-      icon: Zap,
-      color: "text-yellow-400",
-      bg: "bg-yellow-500/10"
-    },
-    {
-      title: "Squad Strategy",
-      description: "You need a balanced team. Track your purse and squad requirements (Batters, Bowlers, All-rounders, WK).",
-      icon: Shield,
-      color: "text-purple-400",
-      bg: "bg-purple-500/10"
-    },
-    {
-      title: "Win the League",
-      description: "After the auction, teams are ranked based on their total Auction Score. The highest score wins the championship!",
-      icon: Trophy,
-      color: "text-green-400",
-      bg: "bg-green-500/10"
-    }
-  ];
 
-  return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-4 mb-10">
-        <button onClick={onBack} className="p-3 rounded-xl glass hover:bg-white/10 transition-all">
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <h2 className="text-3xl font-black uppercase tracking-tighter font-display">How to Play</h2>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {steps.map((step, idx) => (
-          <motion.div 
-            key={idx}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: idx * 0.1 }}
-            className="p-8 rounded-[2.5rem] bg-white/5 border border-white/10 relative overflow-hidden group"
-          >
-            <div className={`w-14 h-14 rounded-2xl ${step.bg} flex items-center justify-center mb-6 group-hover:scale-110 transition-transform`}>
-              <step.icon className={`w-7 h-7 ${step.color}`} />
-            </div>
-            <h3 className="text-xl font-black uppercase tracking-tight mb-3">{step.title}</h3>
-            <p className="text-sm text-slate-500 font-bold leading-relaxed">{step.description}</p>
-            <div className="absolute top-4 right-4 text-4xl font-black text-white/5 font-display">0{idx + 1}</div>
-          </motion.div>
-        ))}
-      </div>
-
-      <div className="mt-12 p-8 rounded-[2.5rem] bg-gradient-to-br from-cyan-500/10 to-purple-500/10 border border-cyan-500/20">
-        <h4 className="text-lg font-black uppercase tracking-tight mb-4 flex items-center gap-2">
-          <Info className="w-5 h-5 text-cyan-400" />
-          Pro Tips
-        </h4>
-        <ul className="space-y-3">
-          {[
-            "Watch the timer! Bids in the last 5 seconds reset the clock.",
-            "AI Bots analyze your budget—they might try to make you overpay.",
-            "Check the 'Auction Score' on player cards to see their true value.",
-            "Use the chat to coordinate or distract your opponents."
-          ].map((tip, i) => (
-            <li key={i} className="flex items-start gap-3 text-xs font-bold text-slate-400">
-              <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
-              {tip}
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
-  );
-};
 
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -110,8 +29,19 @@ export default function App() {
   const [lastFinishedRoomId, setLastFinishedRoomId] = useState<string | null>(null);
 
   const [showBetaError, setShowBetaError] = useState(false);
-  const [showWelcomePopup, setShowWelcomePopup] = useState(false);
   const [showSupportModal, setShowSupportModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const copyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText('https://auctionpitch.vercel.app/');
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy!', err);
+    }
+  };
 
   useEffect(() => {
     if (room?.status === 'finished' && room.roomId !== lastFinishedRoomId) {
@@ -144,7 +74,6 @@ export default function App() {
   });
 
   const [isEditingProfile, setIsEditingProfile] = useState(false);
-  const [showTutorial, setShowTutorial] = useState(false);
   const [editName, setEditName] = useState('');
   const [editPhoto, setEditPhoto] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
@@ -225,10 +154,6 @@ export default function App() {
           const profile = await dbService.getUserProfile(firebaseUser.uid);
           if (profile) {
             setUser(profile);
-            if (!sessionStorage.getItem('welcomed')) {
-              setShowWelcomePopup(true);
-              sessionStorage.setItem('welcomed', 'true');
-            }
           } else {
             const newProfile: UserProfile = {
               uid: firebaseUser.uid,
@@ -241,8 +166,6 @@ export default function App() {
             };
             await dbService.createUserProfile(newProfile);
             setUser(newProfile);
-            setShowWelcomePopup(true);
-            sessionStorage.setItem('welcomed', 'true');
           }
           
           // Fetch rank
@@ -830,8 +753,8 @@ export default function App() {
                 { label: 'Auctions Held', value: '50K+', icon: Trophy },
                 { label: 'Player Cards', value: '200+', icon: Sparkles },
                 { label: 'Avg Rating', value: '4.9/5', icon: Star },
-              ].map((stat, idx) => (
-                <div key={idx} className="p-6 rounded-3xl bg-white/5 border border-white/5 flex flex-col items-center text-center">
+              ].map((stat) => (
+                <div key={stat.label} className="p-6 rounded-3xl bg-white/5 border border-white/5 flex flex-col items-center text-center">
                   <stat.icon className="w-5 h-5 text-slate-500 mb-3" />
                   <div className="text-2xl font-black font-display text-white">{stat.value}</div>
                   <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-1">{stat.label}</div>
@@ -867,6 +790,13 @@ export default function App() {
 
             <div className="flex items-center gap-4">
               <button 
+                onClick={() => setShowShareModal(true)}
+                className="p-4 rounded-2xl glass text-cyan-400 hover:bg-cyan-500/10 transition-all"
+                title="Share"
+              >
+                <Share2 className="w-6 h-6" />
+              </button>
+              <button 
                 onClick={() => setIsMuted(!isMuted)} 
                 className={`p-4 rounded-2xl glass transition-all ${isMuted ? 'text-red-500 bg-red-500/10' : 'text-cyan-500 hover:bg-cyan-500/10'}`}
                 title={isMuted ? "Unmute" : "Mute"}
@@ -886,6 +816,12 @@ export default function App() {
           <div className="md:hidden flex items-center justify-between mt-6 mb-12">
             <h1 className="text-3xl font-black uppercase tracking-tighter font-display text-cyan-400">Auction Pitch Simulator</h1>
             <div className="flex items-center gap-3">
+              <button 
+                onClick={() => setShowShareModal(true)}
+                className="p-3 rounded-xl glass text-cyan-400"
+              >
+                <Share2 className="w-5 h-5" />
+              </button>
               <button 
                 onClick={() => setIsMuted(!isMuted)} 
                 className={`p-3 rounded-xl glass transition-all ${isMuted ? 'text-red-500' : 'text-cyan-500'}`}
@@ -994,10 +930,6 @@ export default function App() {
                           </button>
                         </div>
                       </div>
-                    ) : showTutorial ? (
-                      <div className="w-full px-8 pb-8">
-                        <Tutorial onBack={() => setShowTutorial(false)} />
-                      </div>
                     ) : (
                       <>
                         <h2 className="text-4xl font-black uppercase tracking-tighter font-display mb-2">{user.displayName}</h2>
@@ -1023,7 +955,7 @@ export default function App() {
                             </div>
                           )}
                           <button 
-                            onClick={() => setShowTutorial(true)}
+                            onClick={() => setShowHowToPlay(!showHowToPlay)}
                             className="px-6 py-3 rounded-xl glass hover:bg-purple-500/10 text-purple-400 text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2"
                           >
                             <BookOpen className="w-4 h-4" />
@@ -1037,6 +969,48 @@ export default function App() {
                             Test Voice
                           </button>
                         </div>
+                        
+                        <AnimatePresence>
+                          {showHowToPlay && (
+                            <motion.div 
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: 'auto' }}
+                              exit={{ opacity: 0, height: 0 }}
+                              className="w-full mb-8 overflow-hidden"
+                            >
+                              <div className="p-8 rounded-3xl bg-white/5 border border-cyan-500/20 text-slate-300 text-sm space-y-6 leading-relaxed text-left">
+                                <div className="flex flex-col md:flex-row items-center justify-between gap-4 p-6 rounded-2xl bg-white/5 border border-white/10">
+                                  <div className="flex flex-col">
+                                    <span className="text-xs font-black uppercase text-cyan-400 tracking-wider">Video Tutorial</span>
+                                    <span className="text-[10px] font-bold text-slate-400">Watch our quick guide for better understanding</span>
+                                  </div>
+                                  <a 
+                                    href="https://youtube.com/shorts/QCKFZFwpIck?si=pPPDq674_eN4PJex" 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-red-500 text-white hover:bg-red-600 transition-all text-[10px] font-black uppercase tracking-widest shadow-lg shadow-red-500/20"
+                                  >
+                                    <Play className="w-3 h-3 fill-current" />
+                                    Watch Now
+                                  </a>
+                                </div>
+
+                                <div>
+                                  <h3 className="text-cyan-400 font-black uppercase tracking-widest text-xs mb-4">Quick Rules</h3>
+                                  <ol className="space-y-3 list-decimal list-inside font-bold">
+                                    <li>Create room or join room from public or private room using your friends code.</li>
+                                    <li>You can create a room of 2, 3, 5, 10 and if you're in a hurry you can reduce the bid time to 10 seconds.</li>
+                                    <li>If you're playing alone, you can also create a room with bots. It's an IPL auction expert.</li>
+                                    <li>Place bids and win to add that particular player to your dream team.</li>
+                                    <li>The player with the highest total squad score wins the battle.</li>
+                                    <li>You can choose dark theme or white theme in the profile section.</li>
+                                    <li>You can also choose your name in the profile section.</li>
+                                  </ol>
+                                </div>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </>
                     )}
 
@@ -1095,8 +1069,8 @@ export default function App() {
                               </button>
                             )}
                             <div className="flex -space-x-3">
-                              {(Object.values(r.players) as any[]).slice(0, 3).map((p, i) => (
-                                <img key={i} src={p.photoURL} className="w-8 h-8 rounded-full border-2 border-[#050505]" alt="" />
+                              {(Object.values(r.players) as any[]).slice(0, 3).map((p) => (
+                                <img key={p.uid} src={p.photoURL} className="w-8 h-8 rounded-full border-2 border-[#050505]" alt="" />
                               ))}
                               {Object.values(r.players).length > 3 && (
                                 <div className="w-8 h-8 rounded-full bg-slate-800 border-2 border-[#050505] flex items-center justify-center text-[10px] font-black">
@@ -1216,18 +1190,36 @@ export default function App() {
                     <motion.div 
                       initial={{ opacity: 0, y: -10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="mb-10 p-6 rounded-2xl bg-white/5 border border-cyan-500/20 text-slate-300 text-xs space-y-4 leading-relaxed"
+                      className="mb-10 p-6 rounded-2xl bg-white/5 border border-cyan-500/20 text-slate-300 text-xs space-y-6 leading-relaxed"
                     >
-                      <h3 className="text-cyan-400 font-black uppercase tracking-widest text-[10px]">How to IPL Auction</h3>
-                      <ol className="space-y-3 list-decimal list-inside font-bold">
-                        <li>Create room or join room from public or private room using your friends code.</li>
-                        <li>You can create a room of 2, 3, 5, 10 and if you're in a hurry you can reduce the bid time to 10 seconds.</li>
-                        <li>If you're playing alone, you can also create a room with bots. It's an IPL auction expert.</li>
-                        <li>Place bids and win to add that particular player to your dream team.</li>
-                        <li>The player with the highest total squad score wins the battle.</li>
-                        <li>You can choose dark theme or white theme in the profile section.</li>
-                        <li>You can also choose your name in the profile section.</li>
-                      </ol>
+                      <div className="p-4 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between">
+                        <div className="flex flex-col">
+                          <span className="text-[10px] font-black uppercase text-cyan-400">Watch Tutorial</span>
+                          <span className="text-[8px] font-bold text-slate-500">Quick 60s guide</span>
+                        </div>
+                        <a 
+                          href="https://youtube.com/shorts/QCKFZFwpIck?si=pPPDq674_eN4PJex" 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500 text-white hover:bg-red-600 transition-all text-[10px] font-black uppercase tracking-widest shadow-lg shadow-red-500/20"
+                        >
+                          <Play className="w-3 h-3 fill-current" />
+                          Watch Now
+                        </a>
+                      </div>
+
+                      <div>
+                        <h3 className="text-cyan-400 font-black uppercase tracking-widest text-[10px] mb-3">Quick Rules</h3>
+                        <ol className="space-y-3 list-decimal list-inside font-bold">
+                          <li>Create room or join room from public or private room using your friends code.</li>
+                          <li>You can create a room of 2, 3, 5, 10 and if you're in a hurry you can reduce the bid time to 10 seconds.</li>
+                          <li>If you're playing alone, you can also create a room with bots. It's an IPL auction expert.</li>
+                          <li>Place bids and win to add that particular player to your dream team.</li>
+                          <li>The player with the highest total squad score wins the battle.</li>
+                          <li>You can choose dark theme or white theme in the profile section.</li>
+                          <li>You can also choose your name in the profile section.</li>
+                        </ol>
+                      </div>
                     </motion.div>
                   )}
                   
@@ -1291,19 +1283,24 @@ export default function App() {
                       )}
                       {isCreating ? 'Launching...' : 'Create Multiplayer Room'}
                     </button>
+                    
+                    <div className="relative">
+                      <button 
+                        id="tour-solo-play"
+                        onClick={handlePlaySolo}
+                        disabled={isCreating}
+                        className="w-full py-6 rounded-[1.5rem] bg-gradient-to-r from-yellow-400 via-orange-500 to-red-600 text-white font-black text-lg md:text-xl tracking-widest uppercase flex items-center justify-center gap-4 shadow-[0_0_30px_rgba(245,158,11,0.3)] hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden"
+                      >
+                        {isCreating ? (
+                          <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        ) : (
+                          <Play className="w-6 h-6 fill-current" />
+                        )}
+                        {isCreating ? 'Starting...' : 'Play Solo'}
+                      </button>
+                      
 
-                    <button 
-                      onClick={handlePlaySolo}
-                      disabled={isCreating}
-                      className="w-full py-6 rounded-[1.5rem] bg-gradient-to-r from-yellow-400 via-orange-500 to-red-600 text-white font-black text-lg md:text-xl tracking-widest uppercase flex items-center justify-center gap-4 shadow-[0_0_30px_rgba(245,158,11,0.3)] hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isCreating ? (
-                        <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      ) : (
-                        <Play className="w-6 h-6 fill-current" />
-                      )}
-                      {isCreating ? 'Starting...' : 'Play Solo'}
-                    </button>
+                    </div>
                   </div>
                 </div>
 
@@ -1447,6 +1444,7 @@ export default function App() {
               onToggleMute={() => setIsMuted(!isMuted)}
               onQuit={() => setRoom(null)} 
               onVoteTerminate={handleVoteTerminate}
+
             />
           ) : (
             <ResultsScreen 
@@ -1536,7 +1534,85 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* Share Modal */}
+      <AnimatePresence>
+        {showShareModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[1000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.9, y: 20, opacity: 0 }}
+              className="w-full max-w-sm glass-dark p-8 rounded-[2.5rem] border border-cyan-500/20 text-center relative"
+            >
+              <button 
+                onClick={() => setShowShareModal(false)}
+                className="absolute top-6 right-6 p-2 rounded-xl hover:bg-white/10 text-slate-400 transition-all"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="w-16 h-16 rounded-2xl bg-cyan-500/10 flex items-center justify-center mx-auto mb-6">
+                <Share2 className="w-8 h-8 text-cyan-400" />
+              </div>
+
+              <h2 className="text-2xl font-black uppercase italic mb-2">Share Arena</h2>
+              <p className="text-slate-400 text-sm mb-8 font-bold">Invite your friends to the ultimate auction!</p>
+
+              <div className="grid grid-cols-2 gap-4 mb-8">
+                <button 
+                  onClick={() => {
+                    const text = encodeURIComponent("Check out this amazing IPL Auction Simulator! Build your dream team and compete with friends: https://auctionpitch.vercel.app/");
+                    window.open(`https://wa.me/?text=${text}`, '_blank');
+                  }}
+                  className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-green-500/10 border border-green-500/20 hover:bg-green-500/20 transition-all group"
+                >
+                  <div className="w-10 h-10 rounded-full bg-green-500 flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform">
+                    <Send className="w-5 h-5" />
+                  </div>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-green-400">WhatsApp</span>
+                </button>
+
+                <button 
+                  onClick={() => {
+                    copyToClipboard();
+                    alert('Link copied! Paste it in your Instagram story or bio.');
+                  }}
+                  className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-pink-500/10 border border-pink-500/20 hover:bg-pink-500/20 transition-all group"
+                >
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-yellow-500 via-pink-500 to-purple-500 flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform">
+                    <Instagram className="w-5 h-5" />
+                  </div>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-pink-400">Instagram</span>
+                </button>
+              </div>
+
+              <div className="relative group">
+                <div className="absolute inset-x-0 -top-px h-px bg-gradient-to-r from-transparent via-cyan-400/50 to-transparent"></div>
+                <div className="flex items-center gap-3 p-4 rounded-2xl bg-white/5 border border-white/10 group-hover:bg-white/10 transition-all">
+                  <div className="flex-1 truncate text-left text-xs font-mono text-slate-400">
+                    https://auctionpitch.vercel.app/
+                  </div>
+                  <button 
+                    onClick={copyToClipboard}
+                    className="p-2 rounded-lg bg-cyan-500 text-black shadow-lg hover:scale-110 active:scale-95 transition-all"
+                  >
+                    {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Support & Beta Modal */}
+
+
       <AnimatePresence>
         {showSupportModal && (
           <motion.div 
@@ -1556,9 +1632,9 @@ export default function App() {
                   setShowSupportModal(false);
                   setShowQR(false);
                 }}
-                className="absolute top-6 right-6 p-3 rounded-2xl bg-black/60 hover:bg-red-500/40 hover:text-red-500 transition-all text-slate-300 border border-white/10 z-[1]"
+                className="absolute top-6 right-6 p-4 rounded-full bg-black/80 hover:bg-black transition-all text-white border border-white/20 z-[10] shadow-2xl"
               >
-                <X className="w-6 h-6" />
+                <X className="w-5 h-5" />
               </button>
 
               <div className="text-center">
@@ -1647,55 +1723,6 @@ export default function App() {
                     </motion.div>
                   )}
                 </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Welcome Popup */}
-      <AnimatePresence>
-        {showWelcomePopup && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[120] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md"
-          >
-            <motion.div 
-              initial={{ scale: 0.9, y: 20, opacity: 0 }}
-              animate={{ scale: 1, y: 0, opacity: 1 }}
-              className="w-full max-w-lg glass-dark p-10 rounded-[3rem] border border-cyan-500/20 text-center relative overflow-hidden"
-            >
-              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent"></div>
-              
-              <div className="w-24 h-24 bg-cyan-500/10 rounded-[2rem] flex items-center justify-center mx-auto mb-8 shadow-[0_0_50px_rgba(34,211,238,0.2)]">
-                <Trophy className="w-12 h-12 text-cyan-400" />
-              </div>
-              
-              <h2 className="text-4xl font-black uppercase tracking-tight text-white mb-4">Join Auction Pitch!</h2>
-              <p className="text-slate-400 font-bold text-lg mb-8 leading-relaxed">
-                Ready to build your dream team? Play now and compete with others!<br />
-                Also check out our official website.
-              </p>
-              
-              <div className="flex flex-col gap-4">
-                <a 
-                  href="https://auctionpitch.vercel.app/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full py-5 rounded-[1.5rem] bg-cyan-400 text-black font-black uppercase tracking-widest hover:scale-[1.02] active:scale-[0.98] transition-all shadow-[0_0_30px_rgba(34,211,238,0.4)] flex items-center justify-center gap-3"
-                >
-                  Visit Official Website
-                  <ExternalLink className="w-5 h-5" />
-                </a>
-                
-                <button 
-                  onClick={() => setShowWelcomePopup(false)}
-                  className="w-full py-5 rounded-[1.5rem] bg-white/5 hover:bg-white/10 text-white font-black uppercase tracking-widest transition-all border border-white/10"
-                >
-                  Let's Play!
-                </button>
               </div>
             </motion.div>
           </motion.div>
