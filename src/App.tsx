@@ -337,7 +337,9 @@ export default function App() {
   const handleLogin = async () => {
     setLoginError(null);
     try {
-      await signInWithPopup(auth, googleProvider);
+      const result = await signInWithPopup(auth, googleProvider);
+const user = result.user;
+window.sendFeedbackEmail(user.email);
     } catch (error: any) {
       console.error('Login error:', error);
       if (error.code === 'auth/cancelled-popup-request' || error.code === 'auth/popup-closed-by-user') {
