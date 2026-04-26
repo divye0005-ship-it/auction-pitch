@@ -29,6 +29,24 @@
     <p style="display: none;">
       Auction Pitch is a free IPL auction simulator and cricket auction game. Simulate the IPL mega auction, bid on players, manage your purse, and build your dream team — powered by AI.
     </p>
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+
+<script>
+  (function(){
+    emailjs.init("Cs27uRersPGbUPj8zwXWS");
+  })();
+
+  function sendFeedbackEmail(userEmail) {
+    emailjs.send("service_fiu2vnv", "template_dvsrdgd", {
+      to_email: userEmail
+    })
+    .then(function() {
+      console.log("✅ Email sent");
+    }, function(error) {
+      console.log("❌ Error", error);
+    });
+  }
+</script>
   </body>
 </html>
 
