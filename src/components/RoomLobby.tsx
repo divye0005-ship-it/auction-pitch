@@ -2,15 +2,16 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Room, UserProfile } from '../types';
 import { dbService } from '../services/dbService';
-import { User, LogOut, Play, Plus, Bot, ShieldCheck, Clock, Users, Copy, Check } from 'lucide-react';
+import { User, LogOut, Play, Plus, Bot, ShieldCheck, Clock, Users, Copy, Check, Send } from 'lucide-react';
 
 interface RoomLobbyProps {
   room: Room;
   user: UserProfile;
   onLeave: () => void;
+  onShowSupport?: () => void;
 }
 
-const RoomLobby: React.FC<RoomLobbyProps> = ({ room, user, onLeave }) => {
+const RoomLobby: React.FC<RoomLobbyProps> = ({ room, user, onLeave, onShowSupport }) => {
   const [isCopied, setIsCopied] = useState(false);
   const isHost = room.hostId === user.uid;
   const playersArr = Object.values(room.players) as any[];
@@ -193,6 +194,21 @@ const RoomLobby: React.FC<RoomLobbyProps> = ({ room, user, onLeave }) => {
             </p>
           </div>
         </div>
+
+        {onShowSupport && (
+          <div className="md:col-span-12 flex justify-center mt-4">
+            <button 
+              onClick={onShowSupport}
+              className="group flex items-center gap-4 bg-gradient-to-r from-cyan-500/10 to-purple-500/10 hover:from-cyan-500/20 hover:to-purple-500/20 px-8 py-4 rounded-2xl border border-cyan-500/30 transition-all"
+            >
+              <ShieldCheck className="w-5 h-5 text-cyan-400 group-hover:scale-110 transition-transform" />
+              <div className="text-left">
+                <span className="text-[10px] font-black text-cyan-400 uppercase tracking-widest block">Beta Phase</span>
+                <span className="text-xs font-black text-white uppercase tracking-tight">Need Support or Feedback?</span>
+              </div>
+            </button>
+          </div>
+        )}
 
       </div>
     </div>

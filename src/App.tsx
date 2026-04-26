@@ -10,7 +10,7 @@ import AuctionGameplay from './components/AuctionGameplay';
 import ResultsScreen from './components/ResultsScreen';
 import ChatPanel from './components/ChatPanel';
 import Leaderboard from './components/Leaderboard';
-import { Trophy, Plus, Users, LogIn, LogOut, Sun, Moon, Mail, ChevronRight, Play, LayoutDashboard, User as UserIcon, ArrowLeft, Award, Volume2, VolumeX, Zap, MessageSquare, Shield, Sparkles, Star, BookOpen, Info, HelpCircle, CheckCircle2, AlertCircle, Instagram, Send, Trash2 } from 'lucide-react';
+import { Trophy, Plus, Users, LogIn, LogOut, Sun, Moon, Mail, ChevronRight, Play, LayoutDashboard, User as UserIcon, ArrowLeft, Award, Volume2, VolumeX, Zap, MessageSquare, Shield, Sparkles, Star, BookOpen, Info, HelpCircle, CheckCircle2, AlertCircle, Instagram, Send, Trash2, ExternalLink, Wallet, TrendingUp, ShieldCheck, X } from 'lucide-react';
 
 const Tutorial = ({ onBack }: { onBack: () => void }) => {
   const steps = [
@@ -106,8 +106,22 @@ export default function App() {
     const saved = localStorage.getItem('ipl_auction_muted');
     return saved ? JSON.parse(saved) : false;
   });
+
+  const [lastFinishedRoomId, setLastFinishedRoomId] = useState<string | null>(null);
+
   const [showBetaError, setShowBetaError] = useState(false);
+  const [showWelcomePopup, setShowWelcomePopup] = useState(false);
+  const [showSupportModal, setShowSupportModal] = useState(false);
+
+  useEffect(() => {
+    if (room?.status === 'finished' && room.roomId !== lastFinishedRoomId) {
+      setShowSupportModal(true);
+      setLastFinishedRoomId(room.roomId);
+    }
+  }, [room?.status, room?.roomId, lastFinishedRoomId]);
+  const [showQR, setShowQR] = useState(false);
   const [resumableRoom, setResumableRoom] = useState<Room | null>(null);
+  const [latestPublicRoom, setLatestPublicRoom] = useState<Room | null>(null);
   const [deletingRoomId, setDeletingRoomId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -211,6 +225,10 @@ export default function App() {
           const profile = await dbService.getUserProfile(firebaseUser.uid);
           if (profile) {
             setUser(profile);
+            if (!sessionStorage.getItem('welcomed')) {
+              setShowWelcomePopup(true);
+              sessionStorage.setItem('welcomed', 'true');
+            }
           } else {
             const newProfile: UserProfile = {
               uid: firebaseUser.uid,
@@ -223,6 +241,8 @@ export default function App() {
             };
             await dbService.createUserProfile(newProfile);
             setUser(newProfile);
+            setShowWelcomePopup(true);
+            sessionStorage.setItem('welcomed', 'true');
           }
           
           // Fetch rank
@@ -250,13 +270,39 @@ export default function App() {
       return;
     }
 
+    // Limit to check only 10 most recent rooms for resumability
+    // This is much faster than fetching all rooms
     const roomsRef = collection(db, 'rooms');
-    const q = query(roomsRef, where('status', 'in', ['waiting', 'active']));
+    const q = query(
+      roomsRef, 
+      where('status', 'in', ['waiting', 'active'])
+    );
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const activeRooms = snapshot.docs.map(doc => doc.data() as Room);
+      
+      // Find my active room
       const myRoom = activeRooms.find(r => r.players && r.players[user.uid]);
       setResumableRoom(myRoom || null);
+      
+      if (!myRoom) {
+        // Only show rooms that aren't full and are public
+        const publicOnly = activeRooms
+          .filter(r => r.isPublic && r.status === 'waiting' && Object.keys(r.players || {}).length < (r.playersCount || 8))
+          .sort((a, b) => {
+            const timeA = a.createdAt?.toMillis() || 0;
+            const timeB = b.createdAt?.toMillis() || 0;
+            return timeB - timeA;
+          });
+
+        if (publicOnly.length > 0) {
+          setLatestPublicRoom(publicOnly[0]);
+        } else {
+          setLatestPublicRoom(null);
+        }
+      } else {
+        setLatestPublicRoom(null);
+      }
     });
 
     return () => unsubscribe();
@@ -338,22 +384,24 @@ export default function App() {
 
   useEffect(() => {
     const seedAndCleanup = async () => {
+      // Use session storage to only run this once per browser session
+      if (sessionStorage.getItem('ipl_players_checked')) return;
+
       try {
         const players = await dbService.getAllPlayers();
         const invalidPlayers = players.filter(p => p.name.includes('IPL Star') || p.playerId.startsWith('player-'));
         
         if (invalidPlayers.length > 0) {
-          console.log('Cleaning up invalid players...');
           for (const p of invalidPlayers) {
             await dbService.deletePlayer(p.playerId);
           }
         }
 
-        // Re-seed if we have fewer than 200 players (to ensure the new real players are added)
         if (players.length - invalidPlayers.length < 200) {
-          console.log('Seeding players...');
           await dbService.seedPlayers(IPL_PLAYERS);
         }
+        
+        sessionStorage.setItem('ipl_players_checked', 'true');
       } catch (e) {
         console.error('Seeding/Cleanup failed:', e);
       }
@@ -1090,14 +1138,15 @@ export default function App() {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-                {/* Resume Room Card */}
-                <AnimatePresence>
-                  {resumableRoom && (
+                {/* Resume or Recent Room Card */}
+                <AnimatePresence mode="wait">
+                  {resumableRoom ? (
                     <motion.div 
+                      key="resume"
                       initial={{ opacity: 0, y: -20 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -20 }}
-                      className="md:col-span-12 bento-item bg-gradient-to-r from-cyan-500/20 to-purple-600/20 border-cyan-400/30 relative overflow-hidden group"
+                      className="md:col-span-12 bento-item bg-gradient-to-r from-cyan-500/20 to-purple-600/20 border-cyan-400/30 relative overflow-hidden group mb-4"
                     >
                       <div className="flex flex-col md:flex-row items-center justify-between gap-6">
                         <div className="flex items-center gap-6">
@@ -1118,7 +1167,34 @@ export default function App() {
                         </button>
                       </div>
                     </motion.div>
-                  )}
+                  ) : latestPublicRoom ? (
+                    <motion.div 
+                      key="latest"
+                      initial={{ opacity: 0, y: -20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -20 }}
+                      className="md:col-span-12 bento-item bg-gradient-to-r from-orange-500/10 to-transparent border-orange-500/30 relative overflow-hidden group mb-4"
+                    >
+                      <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                        <div className="flex items-center gap-6">
+                          <div className="w-16 h-16 rounded-2xl bg-orange-500/20 flex items-center justify-center">
+                            <Sparkles className="w-8 h-8 text-orange-400 animate-pulse" />
+                          </div>
+                          <div className="text-left">
+                            <span className="text-[10px] font-black text-orange-400 uppercase tracking-[0.3em] mb-1 block">Recent Public Auction</span>
+                            <h3 className="text-2xl font-black uppercase tracking-tight text-white">Join {latestPublicRoom.title || 'Live Room'}</h3>
+                            <p className="text-slate-400 font-bold text-xs">Room ID: {latestPublicRoom.roomId} • {Object.keys(latestPublicRoom.players).length}/{latestPublicRoom.playersCount} Players</p>
+                          </div>
+                        </div>
+                        <button 
+                          onClick={() => handleJoinRoomById(latestPublicRoom.roomId)}
+                          className="w-full md:w-auto px-10 py-4 rounded-2xl bg-orange-500 text-white font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-[0_0_30px_rgba(249,115,22,0.3)]"
+                        >
+                          Join Now
+                        </button>
+                      </div>
+                    </motion.div>
+                  ) : null}
                 </AnimatePresence>
 
                 {/* Create Room Card */}
@@ -1305,6 +1381,21 @@ export default function App() {
           </div>
 
           <div className="mt-20 text-center pb-12 flex flex-col items-center gap-6">
+             <button 
+                onClick={() => {
+                  setShowSupportModal(true);
+                  setShowQR(false);
+                }}
+                className="px-10 py-5 rounded-[2rem] bg-gradient-to-r from-cyan-500/10 via-purple-500/10 to-cyan-500/10 border-2 border-cyan-500/30 hover:border-cyan-400 transition-all group flex items-center gap-4 shadow-[0_0_50px_rgba(34,211,238,0.1)]"
+             >
+                <ShieldCheck className="w-6 h-6 text-cyan-400 group-hover:scale-110 transition-transform" />
+                <div className="flex flex-col items-start">
+                  <span className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] mb-0.5">Beta Support</span>
+                  <span className="text-sm font-black text-white uppercase tracking-widest">Feedback & Support</span>
+                </div>
+                <ChevronRight className="w-5 h-5 text-cyan-400 ml-2" />
+             </button>
+
              <div className="flex flex-col items-center gap-6">
                <div className="flex flex-wrap justify-center gap-4">
                  <a 
@@ -1340,7 +1431,12 @@ export default function App() {
       ) : (
         <div className="h-screen flex flex-col">
           {room.status === 'waiting' ? (
-            <RoomLobby room={room} user={user} onLeave={handleLeaveRoom} />
+            <RoomLobby 
+              room={room} 
+              user={user} 
+              onLeave={handleLeaveRoom}
+              onShowSupport={() => setShowSupportModal(true)}
+            />
           ) : room.status === 'active' ? (
             <AuctionGameplay 
               room={room} 
@@ -1353,7 +1449,13 @@ export default function App() {
               onVoteTerminate={handleVoteTerminate}
             />
           ) : (
-            <ResultsScreen room={room} user={user} allPlayers={IPL_PLAYERS} onHome={() => setRoom(null)} />
+            <ResultsScreen 
+              room={room} 
+              user={user} 
+              allPlayers={IPL_PLAYERS} 
+              onHome={() => setRoom(null)}
+              onShowSupport={() => setShowSupportModal(true)}
+            />
           )}
           
           {room.status !== 'finished' && (
@@ -1429,6 +1531,172 @@ export default function App() {
               >
                 Dismiss
               </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Support & Beta Modal */}
+      <AnimatePresence>
+        {showSupportModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-black/90 backdrop-blur-xl"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 50, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.9, y: 50, opacity: 0 }}
+              className="w-full max-w-md glass-dark p-8 md:p-10 rounded-[3.5rem] border border-cyan-500/20 relative overflow-hidden"
+            >
+              <button 
+                onClick={() => {
+                  setShowSupportModal(false);
+                  setShowQR(false);
+                }}
+                className="absolute top-6 right-6 p-3 rounded-2xl bg-black/60 hover:bg-red-500/40 hover:text-red-500 transition-all text-slate-300 border border-white/10 z-[1]"
+              >
+                <X className="w-6 h-6" />
+              </button>
+
+              <div className="text-center">
+                <div className="inline-flex items-center gap-2 mb-6 px-4 py-2 rounded-full bg-cyan-500/10 border border-cyan-500/20">
+                  <TrendingUp className="w-4 h-4 text-cyan-400" />
+                  <span className="text-[10px] font-black text-cyan-400 uppercase tracking-[0.2em]">Game Feedback</span>
+                </div>
+
+                <h2 className="text-4xl font-black uppercase text-white mb-4 italic font-display leading-tight">
+                  WE ARE IN <br />
+                  <span className="text-cyan-400">BETA NOW!</span>
+                </h2>
+
+                <p className="text-slate-400 font-bold text-sm mb-10 leading-relaxed">
+                  Please help us improve this game by giving your small feedback to us. Every suggestion counts in our mission!
+                </p>
+
+                <div className="space-y-4 mb-10">
+                  <a 
+                    href="mailto:divye0005@gmail.com"
+                    className="w-full py-4 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center gap-3 text-xs font-black uppercase tracking-widest text-white hover:bg-white/10 transition-all"
+                  >
+                    <Star className="w-4 h-4 text-cyan-400" />
+                    divye0005@gmail.com
+                  </a>
+
+                  <a 
+                    href="https://t.me/auctionpitch"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-4 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center gap-3 text-xs font-black uppercase tracking-widest text-blue-400 hover:bg-blue-500/20 transition-all"
+                  >
+                    <Send className="w-4 h-4" />
+                    Feedback Group
+                  </a>
+                </div>
+
+                <div className="p-8 rounded-[2.5rem] bg-yellow-400/5 border border-yellow-400/10 relative overflow-hidden">
+                  <div className="flex items-center justify-center gap-2 mb-4">
+                    <Wallet className="w-4 h-4 text-yellow-400" />
+                    <span className="text-[10px] font-black text-yellow-400 uppercase tracking-[0.2em]">Support Development</span>
+                  </div>
+
+                  <div className="mb-6 group">
+                    <span className="text-[10px] font-black text-white/40 uppercase block mb-2 tracking-widest">UPI ID (Tap to Pay)</span>
+                    <a 
+                      href="upi://pay?pa=divye.1@superyes&pn=Divye%20Lalwani&cu=INR"
+                      className="text-2xl font-black text-yellow-400 font-mono tracking-tight bg-yellow-400/10 py-4 px-6 rounded-2xl inline-block border border-yellow-400/20 hover:bg-yellow-400/20 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                    >
+                      divye.1@superyes
+                    </a>
+                  </div>
+
+                  {!showQR ? (
+                    <button 
+                      onClick={() => setShowQR(true)}
+                      className="w-full py-5 rounded-2xl bg-yellow-400 text-black font-black uppercase tracking-widest text-sm hover:scale-105 transition-all shadow-[0_0_30px_rgba(245,158,11,0.3)] flex items-center justify-center gap-3"
+                    >
+                      Scan QR to Pay
+                      <ExternalLink className="w-5 h-5" />
+                    </button>
+                  ) : (
+                    <motion.div 
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="flex flex-col items-center gap-6 pt-4"
+                    >
+                      <div className="p-4 bg-white rounded-3xl shadow-2xl relative">
+                        <img 
+                          src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=upi://pay?pa=divye.1@superyes%26pn=Divye%20Lalwani" 
+                          alt="Support QR Code"
+                          className="w-48 h-48 md:w-56 md:h-56"
+                        />
+                        <div className="absolute inset-0 border-8 border-white/50 rounded-3xl pointer-events-none"></div>
+                      </div>
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                        Scan with any UPI app
+                      </p>
+                      <button 
+                        onClick={() => setShowQR(false)}
+                        className="text-white/40 hover:text-white text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-all"
+                      >
+                        <ArrowLeft className="w-3 h-3" />
+                        Hide QR Code
+                      </button>
+                    </motion.div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Welcome Popup */}
+      <AnimatePresence>
+        {showWelcomePopup && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[120] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              className="w-full max-w-lg glass-dark p-10 rounded-[3rem] border border-cyan-500/20 text-center relative overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent"></div>
+              
+              <div className="w-24 h-24 bg-cyan-500/10 rounded-[2rem] flex items-center justify-center mx-auto mb-8 shadow-[0_0_50px_rgba(34,211,238,0.2)]">
+                <Trophy className="w-12 h-12 text-cyan-400" />
+              </div>
+              
+              <h2 className="text-4xl font-black uppercase tracking-tight text-white mb-4">Join Auction Pitch!</h2>
+              <p className="text-slate-400 font-bold text-lg mb-8 leading-relaxed">
+                Ready to build your dream team? Play now and compete with others!<br />
+                Also check out our official website.
+              </p>
+              
+              <div className="flex flex-col gap-4">
+                <a 
+                  href="https://auctionpitch.vercel.app/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-5 rounded-[1.5rem] bg-cyan-400 text-black font-black uppercase tracking-widest hover:scale-[1.02] active:scale-[0.98] transition-all shadow-[0_0_30px_rgba(34,211,238,0.4)] flex items-center justify-center gap-3"
+                >
+                  Visit Official Website
+                  <ExternalLink className="w-5 h-5" />
+                </a>
+                
+                <button 
+                  onClick={() => setShowWelcomePopup(false)}
+                  className="w-full py-5 rounded-[1.5rem] bg-white/5 hover:bg-white/10 text-white font-black uppercase tracking-widest transition-all border border-white/10"
+                >
+                  Let's Play!
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}

@@ -8,9 +8,10 @@ interface ResultsScreenProps {
   user: UserProfile;
   allPlayers: Player[];
   onHome: () => void;
+  onShowSupport?: () => void;
 }
 
-const ResultsScreen: React.FC<ResultsScreenProps> = ({ room, user, allPlayers, onHome }) => {
+const ResultsScreen: React.FC<ResultsScreenProps> = ({ room, user, allPlayers, onHome, onShowSupport }) => {
   const getPlayerSquad = (uid: string) => {
     const playerIds = room.squads[uid] || [];
     return allPlayers.filter(p => playerIds.includes(p.playerId));
@@ -149,6 +150,21 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ room, user, allPlayers, o
             </div>
           </div>
         </div>
+
+        {onShowSupport && (
+          <div className="md:col-span-12 flex justify-center mt-4">
+            <button 
+              onClick={onShowSupport}
+              className="group flex items-center gap-4 bg-gradient-to-r from-cyan-500/10 to-purple-500/10 hover:from-cyan-500/20 hover:to-purple-500/20 px-8 py-4 rounded-2xl border border-cyan-500/30 transition-all"
+            >
+              <TrendingUp className="w-5 h-5 text-cyan-400 group-hover:scale-110 transition-transform" />
+              <div className="text-left">
+                <span className="text-[10px] font-black text-cyan-400 uppercase tracking-widest block">Beta Feedback</span>
+                <span className="text-xs font-black text-white uppercase tracking-tight">Help us improve the game!</span>
+              </div>
+            </button>
+          </div>
+        )}
 
       </div>
     </div>

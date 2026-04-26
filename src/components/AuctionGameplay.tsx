@@ -26,6 +26,13 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, setRoom, 
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Optimization: Create a player lookup map for O(1) access
+  const playerMap = React.useMemo(() => {
+    const map = new Map<string, Player>();
+    allPlayers.forEach(p => map.set(p.playerId, p));
+    return map;
+  }, [allPlayers]);
+
   // Reset isEnding when player changes
   useEffect(() => {
     if (!room.currentPlayerId) {
@@ -131,14 +138,14 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, setRoom, 
   // Sync current player and announce
   useEffect(() => {
     if (room.currentPlayerId) {
-      const p = allPlayers.find(pl => pl.playerId === room.currentPlayerId);
+      const p = playerMap.get(room.currentPlayerId);
       if (p && p.playerId !== currentPlayer?.playerId) {
         setCurrentPlayer(p);
         // Immediate announcement
         speak(`Next player: ${p.name}. Base price: ${p.basePrice >= 100 ? (p.basePrice/100).toFixed(2) + ' Crore' : p.basePrice + ' Lakhs'}`);
       }
     }
-  }, [room.currentPlayerId, allPlayers, currentPlayer, speak]);
+  }, [room.currentPlayerId, playerMap, currentPlayer, speak]);
 
   // Timer logic
   useEffect(() => {
@@ -288,7 +295,7 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, setRoom, 
           }
 
           // Role-based valuation (bots prioritize what they need)
-          const squadRoles = botSquad.map(id => allPlayers.find(pl => pl.playerId === id)?.role).filter(Boolean);
+          const squadRoles = botSquad.map(id => playerMap.get(id)?.role).filter(Boolean);
           const roleCount = squadRoles.filter(r => r === currentPlayer.role).length;
           
           // Bots prioritize roles they are missing
@@ -315,13 +322,18 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, setRoom, 
             let bidProbability = Math.max(timeUrgency * 0.4, valuationGap * 0.8);
             
             // Bots don't bid every single time, they "wait and watch"
+            // Optimization: Stagger bot bids based on their UID to avoid batch processing spikes
+            const botDelay = (botHash % 10) * 80;
+            
             if (Math.random() > 0.6) bidProbability *= 0.4;
 
             if (Math.random() < bidProbability) { 
-              if (botPurse >= nextBid) {
-                dbService.bidOnPlayer(room.roomId, bot.uid, nextBid, room.revealTimer, currentPlayer.basePrice)
-                  .catch(err => console.log("Bot bid failed (likely race condition):", err.message));
-              }
+              setTimeout(() => {
+                if (botPurse >= nextBid) {
+                  dbService.bidOnPlayer(room.roomId, bot.uid, nextBid, room.revealTimer, currentPlayer.basePrice)
+                    .catch(err => console.log("Bot bid failed (likely race condition):", err.message));
+                }
+              }, botDelay);
             }
           }
         });
@@ -578,7 +590,7 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({ room, user, setRoom, 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   {playersArr.map(p => {
                     const squadIds = room.squads[p.uid] || [];
-                    const squadPlayers = squadIds.map(id => allPlayers.find(pl => pl.playerId === id)).filter(Boolean) as Player[];
+                    const squadPlayers = squadIds.map(id => playerMap.get(id)).filter(Boolean) as Player[];
                     
                     return (
                       <div key={p.uid} className="bento-item glass-dark border-white/5">
