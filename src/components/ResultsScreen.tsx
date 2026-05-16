@@ -22,7 +22,7 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ room, user, allPlayers, o
     return squad.reduce((sum, p) => sum + p.auctionScore, 0);
   };
 
-  const leaderboard = (Object.values(room.players) as any[])
+  const fullLeaderboard = (Object.values(room.players) as any[])
     .map(p => ({
       ...p,
       totalScore: calculateSquadScore(p.uid),
@@ -31,7 +31,11 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ room, user, allPlayers, o
     }))
     .sort((a, b) => b.totalScore - a.totalScore);
 
-  const myStats = leaderboard.find(p => p.uid === user.uid);
+  const myStatsIndex = fullLeaderboard.findIndex(p => p.uid === user.uid);
+  const myStats = myStatsIndex >= 0 ? fullLeaderboard[myStatsIndex] : undefined;
+  const myRank = myStatsIndex + 1;
+
+  const leaderboard = fullLeaderboard.slice(0, 50);
 
   return (
     <div className="flex-1 p-8 max-w-6xl mx-auto w-full overflow-y-auto">
@@ -108,7 +112,7 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ room, user, allPlayers, o
             <div className="grid grid-cols-2 gap-4">
               <div className="p-4 rounded-2xl bg-white/5 border border-white/5">
                 <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-1">Rank</span>
-                <span className="text-2xl font-black font-display">#{leaderboard.findIndex(p => p.uid === user.uid) + 1}</span>
+                <span className="text-2xl font-black font-display">#{myRank}</span>
               </div>
               <div className="p-4 rounded-2xl bg-white/5 border border-white/5">
                 <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-1">Squad Size</span>

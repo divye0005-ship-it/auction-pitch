@@ -117,15 +117,13 @@ export const dbService = {
 
   async getLeaderboard(): Promise<UserProfile[]> {
     try {
-      const q = query(
-        collection(db, 'users'),
-        where('totalWinnings', '>', 0)
-      );
+      const q = query(collection(db, 'users'));
       const querySnapshot = await getDocs(q);
       return querySnapshot.docs
         .map(doc => doc.data() as UserProfile)
         .filter(user => user.role !== 'guest')
-        .sort((a, b) => (b.totalWinnings || 0) - (a.totalWinnings || 0));
+        .sort((a, b) => (b.totalWinnings || 0) - (a.totalWinnings || 0))
+        .slice(0, 500);
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, 'users');
       return [];
@@ -344,7 +342,9 @@ export const dbService = {
     return onSnapshot(q, (snapshot) => {
       const rooms = snapshot.docs
         .map(doc => doc.data() as Room)
-        .filter(room => Object.keys(room.players || {}).length > 0); // Only show if someone is playing
+        .filter(room => Object.keys(room.players || {}).length > 0)
+        .sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0))
+        .slice(0, 20); // Limit to top 20 visible to avoid UI lag
       callback(rooms);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'rooms');

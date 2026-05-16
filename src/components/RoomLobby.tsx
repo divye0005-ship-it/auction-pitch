@@ -15,6 +15,7 @@ const RoomLobby: React.FC<RoomLobbyProps> = ({ room, user, onLeave, onShowSuppor
   const [isCopied, setIsCopied] = useState(false);
   const isHost = room.hostId === user.uid;
   const playersArr = Object.values(room.players) as any[];
+  const visiblePlayers = playersArr.slice(0, 50);
   const currentUserInRoom = room.players[user.uid];
 
   const handleCopyCode = () => {
@@ -126,7 +127,7 @@ const RoomLobby: React.FC<RoomLobbyProps> = ({ room, user, onLeave, onShowSuppor
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <AnimatePresence mode="popLayout">
-              {playersArr.map((p, idx) => (
+              {visiblePlayers.map((p, idx) => (
                 <motion.div 
                   key={p.uid}
                   initial={{ opacity: 0, x: -20 }}

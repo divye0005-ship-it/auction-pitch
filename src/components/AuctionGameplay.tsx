@@ -67,6 +67,17 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
   }, []);
 
   const playersArr = React.useMemo(() => Object.values(room.players) as any[], [room.players]);
+  const visiblePlayers = React.useMemo(() => {
+    // Show current user first, then host, then others, max 50 to prevent UI lag
+    const userFirst = [...playersArr].sort((a, b) => {
+      if (a.uid === user.uid) return -1;
+      if (b.uid === user.uid) return 1;
+      if (a.uid === room.hostId) return -1;
+      if (b.uid === room.hostId) return 1;
+      return 0;
+    });
+    return userFirst.slice(0, 50);
+  }, [playersArr, user.uid, room.hostId]);
   const currentBid = room.currentBidAmount || 0;
   const currentBidderId = room.currentBidderId;
   const currentBidder = React.useMemo(() => currentBidderId ? room.players[currentBidderId] : null, [currentBidderId, room.players]);
@@ -327,7 +338,7 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
           
           // Only bid if not already the highest bidder and within valuation
           const nextBid = getNextBidAmount(currentBid, currentPlayer.basePrice);
-          const maxBidLimit = 2000; // 20 Crores limit as requested
+          const maxBidLimit = currentPlayer.auctionScore > 950 ? 3000 : 500; // 30 Crores for score > 950, else 5 Crores limit
 
           if (botSquad.length < 25 && currentBidderId !== bot.uid && currentBid < valuation && nextBid <= maxBidLimit && botPurse > currentBid + 50) {
             // Higher probability of bidding if valuation is much higher than current bid
@@ -520,7 +531,7 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
                 Live Participants
               </h3>
               <div className="space-y-2 max-h-[120px] overflow-y-auto pr-2 custom-scrollbar">
-                {playersArr.map(p => (
+                {visiblePlayers.map(p => (
                   <div key={p.uid} className="flex items-center justify-between p-2 rounded-xl bg-white/5 border border-white/5">
                     <div className="flex items-center gap-2">
                       <img src={p.photoURL} className="w-6 h-6 rounded-lg" alt="" />
@@ -607,7 +618,7 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
 
               <div className="flex-1 overflow-y-auto p-8">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  {playersArr.map(p => {
+                  {visiblePlayers.map(p => {
                     const squadIds = room.squads[p.uid] || [];
                     const squadPlayers = squadIds.map(id => playerMap.get(id)).filter(Boolean) as Player[];
                     
