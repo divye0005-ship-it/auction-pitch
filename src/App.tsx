@@ -169,14 +169,18 @@ export default function App() {
           }
           
           // Fetch rank
-          const leaderboard = await dbService.getLeaderboard();
-          const rank = leaderboard.findIndex(u => u.uid === firebaseUser.uid);
-          if (rank !== -1) {
-            setUserRank(rank + 1);
+          const rank = await dbService.getUserRank(firebaseUser.uid, profile ? (profile.totalWinnings || 0) : 0);
+          if (rank !== null) {
+            setUserRank(rank);
           }
-        } catch (error) {
+        } catch (error: any) {
           console.error('Auth state change error:', error);
-          setLoginError('Failed to load user profile. Please check your internet connection.');
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          if (errorMsg.includes('Quota')) {
+            setLoginError('Service temporarily unavailable due to high traffic reaching database limits. Please try again tomorrow when quotas reset.');
+          } else {
+            setLoginError('Failed to load user profile. Please check your internet connection.');
+          }
         }
       } else {
         setUser(null);
@@ -190,46 +194,53 @@ export default function App() {
   useEffect(() => {
     if (!user || room) {
       setResumableRoom(null);
+      setLatestPublicRoom(null);
       return;
     }
 
-    // Limit to check only 10 most recent rooms for resumability
-    // This is much faster than fetching all rooms
-    const roomsRef = collection(db, 'rooms');
-    const q = query(
-      roomsRef, 
-      where('status', 'in', ['waiting', 'active'])
-    );
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const activeRooms = snapshot.docs.map(doc => doc.data() as Room);
-      
-      // Find my active room
-      const myRoom = activeRooms.find(r => r.players && r.players[user.uid]);
-      setResumableRoom(myRoom || null);
-      
-      if (!myRoom) {
-        // Only show rooms that aren't full and are public
-        const publicOnly = activeRooms
-          .filter(r => r.isPublic && r.status === 'waiting' && Object.keys(r.players || {}).length < (r.playersCount || 8))
-          .sort((a, b) => {
-            const timeA = a.createdAt?.toMillis() || 0;
-            const timeB = b.createdAt?.toMillis() || 0;
-            return timeB - timeA;
-          });
-
-        if (publicOnly.length > 0) {
-          setLatestPublicRoom(publicOnly[0]);
+    const fetchRoomsInfo = async () => {
+      try {
+        // FAST PATH: use localStorage to resume room
+        const savedRoomId = localStorage.getItem('activeRoomId');
+        if (savedRoomId) {
+          const roomData = await dbService.getRoom(savedRoomId);
+          if (roomData && ['waiting', 'active'].includes(roomData.status)) {
+            if (roomData.players && roomData.players[user.uid]) {
+              setResumableRoom(roomData);
+              // Fetch just 1 recent public room visually as fallback
+              const pubRooms = await dbService.getPublicRooms();
+              if (pubRooms.length > 0) setLatestPublicRoom(pubRooms[0]);
+              return;
+            }
+          } else {
+            localStorage.removeItem('activeRoomId');
+          }
+        }
+        
+        // SLOW PATH: if not found, we don't scan all DB rooms because it exhausts quota.
+        // Instead, just show them the latest public room.
+        const pubRooms = await dbService.getPublicRooms();
+        if (pubRooms.length > 0) {
+          setLatestPublicRoom(pubRooms[0]);
         } else {
           setLatestPublicRoom(null);
         }
-      } else {
-        setLatestPublicRoom(null);
+      } catch (err) {
+        console.error("Failed to fetch initial rooms state", err);
       }
-    });
+    };
 
-    return () => unsubscribe();
+    fetchRoomsInfo();
   }, [user, room]);
+
+  useEffect(() => {
+    if (room?.roomId && ['waiting', 'active'].includes(room.status)) {
+      localStorage.setItem('activeRoomId', room.roomId);
+    } else if (!room || !['waiting', 'active'].includes(room.status)) {
+      // Don't remove immediately on finished so ResultsScreen can show, 
+      // but on next load they won't resume a finished room anyway
+    }
+  }, [room?.roomId, room?.status]);
 
   useEffect(() => {
     if (room?.roomId) {
@@ -240,26 +251,24 @@ export default function App() {
     }
   }, [room?.roomId]);
 
-  useEffect(() => {
+  const fetchPublicRooms = async () => {
     if (user) {
-      const unsubscribePublic = dbService.subscribeToPublicRooms((rooms) => {
-        setPublicRooms(rooms);
-      });
-      
-      return () => {
-        unsubscribePublic();
-      };
+      const rooms = await dbService.getPublicRooms();
+      setPublicRooms(rooms);
     }
+  };
+
+  useEffect(() => {
+    fetchPublicRooms();
   }, [user]);
 
   useEffect(() => {
     const updateRank = async () => {
       if (!user) return;
       try {
-        const leaderboard = await dbService.getLeaderboard();
-        const rank = leaderboard.findIndex(u => u.uid === user.uid);
-        if (rank !== -1) {
-          setUserRank(rank + 1);
+        const rank = await dbService.getUserRank(user.uid, user.totalWinnings || 0);
+        if (rank !== null) {
+          setUserRank(rank);
         }
       } catch (error) {
         console.error('Failed to update rank:', error);
@@ -274,7 +283,8 @@ export default function App() {
       try {
         const querySnapshot = await getDocs(query(
           collection(db, 'rooms'),
-          where('status', '==', 'active')
+          where('status', '==', 'active'),
+          where('hostId', '==', user.uid)
         ));
         
         const now = Date.now();
@@ -305,34 +315,7 @@ export default function App() {
     }
   }, [user]);
 
-  useEffect(() => {
-    const seedAndCleanup = async () => {
-      // Use session storage to only run this once per browser session
-      if (sessionStorage.getItem('ipl_players_checked')) return;
-
-      try {
-        const players = await dbService.getAllPlayers();
-        const invalidPlayers = players.filter(p => p.name.includes('IPL Star') || p.playerId.startsWith('player-'));
-        
-        if (invalidPlayers.length > 0) {
-          for (const p of invalidPlayers) {
-            await dbService.deletePlayer(p.playerId);
-          }
-        }
-
-        if (players.length - invalidPlayers.length < 200) {
-          await dbService.seedPlayers(IPL_PLAYERS);
-        }
-        
-        sessionStorage.setItem('ipl_players_checked', 'true');
-      } catch (e) {
-        console.error('Seeding/Cleanup failed:', e);
-      }
-    };
-    if (user) {
-      seedAndCleanup();
-    }
-  }, [user]);
+  // Removed global seedAndCleanup that costs 200 read quotas per session.
 
   const handleLogin = async () => {
     setLoginError(null);
@@ -403,17 +386,7 @@ export default function App() {
     }
   }, [room?.status, user?.role]);
 
-  useEffect(() => {
-    // Initial cleanup
-    dbService.cleanupEmptyRooms();
-    
-    // Periodic cleanup every 1 hour
-    const cleanupInterval = setInterval(() => {
-      dbService.cleanupEmptyRooms();
-    }, 60 * 60 * 1000);
-
-    return () => clearInterval(cleanupInterval);
-  }, []);
+  // Removed client-side periodic cleanup to prevent Firestore free-tier read quota exhaustion
 
   const generateRoomId = () => {
     return Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -1033,9 +1006,20 @@ export default function App() {
               <div className="bento-item glass-dark">
                 <div className="flex items-center justify-between mb-8">
                   <h2 className="text-3xl font-black uppercase tracking-tighter font-display">Public Auctions</h2>
-                  <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-green-500/10 text-green-400 text-[10px] font-black uppercase tracking-widest">
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                    {publicRooms.length} Live Rooms
+                  <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3">
+                    <button 
+                      onClick={fetchPublicRooms}
+                      className="px-4 py-2 rounded-xl glass hover:bg-white/10 transition-all text-slate-300 text-[10px] font-black uppercase tracking-widest flex items-center gap-2"
+                    >
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Refresh
+                    </button>
+                    <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-green-500/10 text-green-400 text-[10px] font-black uppercase tracking-widest">
+                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                      {publicRooms.length} Live Rooms
+                    </div>
                   </div>
                 </div>
                 

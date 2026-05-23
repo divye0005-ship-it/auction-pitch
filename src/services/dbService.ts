@@ -1,6 +1,6 @@
 import { db, auth, runTransaction, increment, arrayUnion } from '../firebase';
 import { 
-  doc, getDoc, setDoc, collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, getDocs, serverTimestamp 
+  doc, getDoc, setDoc, collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, getDocs, serverTimestamp, getCountFromServer
 } from 'firebase/firestore';
 import { UserProfile, Room, Player, Message } from '../types';
 import { getNextBidAmount } from '../lib/auctionUtils';
@@ -55,6 +55,9 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
 }
+
+let cachedLeaderboard: UserProfile[] | null = null;
+let lastLeaderboardFetch = 0;
 
 export const dbService = {
   // User Profile
@@ -117,16 +120,44 @@ export const dbService = {
 
   async getLeaderboard(): Promise<UserProfile[]> {
     try {
-      const q = query(collection(db, 'users'));
+      const now = Date.now();
+      // Cache for 2 minutes to save quota
+      if (cachedLeaderboard && now - lastLeaderboardFetch < 2 * 60 * 1000) {
+        return cachedLeaderboard;
+      }
+      
+      // Use Firestore query limit to reduce read operations
+      const q = query(
+        collection(db, 'users'),
+        orderBy('totalWinnings', 'desc'),
+        limit(1000)
+      );
       const querySnapshot = await getDocs(q);
-      return querySnapshot.docs
+      const results = querySnapshot.docs
         .map(doc => doc.data() as UserProfile)
         .filter(user => user.role !== 'guest')
-        .sort((a, b) => (b.totalWinnings || 0) - (a.totalWinnings || 0))
         .slice(0, 500);
+        
+      cachedLeaderboard = results;
+      lastLeaderboardFetch = now;
+      return results;
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, 'users');
       return [];
+    }
+  },
+
+  async getUserRank(uid: string, totalWinnings: number): Promise<number | null> {
+    try {
+      const q = query(
+        collection(db, 'users'),
+        where('totalWinnings', '>', totalWinnings)
+      );
+      const snapshot = await getCountFromServer(q);
+      // Rank is the number of players with strictly more winnings + 1
+      return snapshot.data().count + 1;
+    } catch (error) {
+      return null;
     }
   },
 
@@ -333,22 +364,24 @@ export const dbService = {
     }
   },
 
-  subscribeToPublicRooms(callback: (rooms: Room[]) => void) {
-    const q = query(
-      collection(db, 'rooms'), 
-      where('isPublic', '==', true),
-      where('status', '==', 'waiting')
-    );
-    return onSnapshot(q, (snapshot) => {
-      const rooms = snapshot.docs
+  async getPublicRooms(): Promise<Room[]> {
+    try {
+      const q = query(
+        collection(db, 'rooms'), 
+        where('isPublic', '==', true),
+        where('status', '==', 'waiting'),
+        orderBy('createdAt', 'desc'),
+        limit(50) // Limit to reduce quota
+      );
+      const snapshot = await getDocs(q);
+      return snapshot.docs
         .map(doc => doc.data() as Room)
         .filter(room => Object.keys(room.players || {}).length > 0)
-        .sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0))
-        .slice(0, 20); // Limit to top 20 visible to avoid UI lag
-      callback(rooms);
-    }, (error) => {
+        .slice(0, 20); // Limit to top 20 visible
+    } catch (error) {
       handleFirestoreError(error, OperationType.LIST, 'rooms');
-    });
+      return [];
+    }
   },
 
   subscribeToUserRooms(userId: string, callback: (rooms: Room[]) => void) {
