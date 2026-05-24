@@ -174,11 +174,11 @@ export default function App() {
             setUserRank(rank);
           }
         } catch (error: any) {
-          console.error('Auth state change error:', error);
           const errorMsg = error instanceof Error ? error.message : String(error);
           if (errorMsg.includes('Quota')) {
             setLoginError('Service temporarily unavailable due to high traffic reaching database limits. Please try again tomorrow when quotas reset.');
           } else {
+            console.error('Auth state change error:', error);
             setLoginError('Failed to load user profile. Please check your internet connection.');
           }
         }
@@ -310,8 +310,6 @@ export default function App() {
 
     if (user) {
       cleanupStaleRooms();
-      const interval = setInterval(cleanupStaleRooms, 15 * 60 * 1000); // Run every 15 mins
-      return () => clearInterval(interval);
     }
   }, [user]);
 
@@ -322,11 +320,11 @@ export default function App() {
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (error: any) {
-      console.error('Login error:', error);
       if (error.code === 'auth/cancelled-popup-request' || error.code === 'auth/popup-closed-by-user') {
-        // User cancelled or closed the popup, don't show an error message
+        // User cancelled or closed the popup, don't log an error or show message
         return;
       }
+      console.error('Login error:', error);
       if (error.code === 'auth/unauthorized-domain') {
         setLoginError('This domain is not authorized in Firebase. Please add your Vercel domain to the "Authorized Domains" list in the Firebase Console.');
       } else {

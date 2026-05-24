@@ -1,6 +1,6 @@
 import { db, auth, runTransaction, increment, arrayUnion } from '../firebase';
 import { 
-  doc, getDoc, setDoc, collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, getDocs, serverTimestamp, getCountFromServer
+  doc, getDoc, setDoc, collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, getDocs, serverTimestamp, getCountFromServer, orderBy, limit
 } from 'firebase/firestore';
 import { UserProfile, Room, Player, Message } from '../types';
 import { getNextBidAmount } from '../lib/auctionUtils';
@@ -34,8 +34,9 @@ interface FirestoreErrorInfo {
 }
 
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errStr = error instanceof Error ? error.message : String(error);
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errStr,
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
@@ -52,20 +53,35 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     operationType,
     path
   }
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  if (!errStr.includes('Quota')) {
+    console.error('Firestore Error: ', JSON.stringify(errInfo));
+  }
   throw new Error(JSON.stringify(errInfo));
 }
 
 let cachedLeaderboard: UserProfile[] | null = null;
 let lastLeaderboardFetch = 0;
 
+let cachedProfile: UserProfile | null = null;
+let lastProfileFetch = 0;
+
 export const dbService = {
   // User Profile
   async getUserProfile(uid: string): Promise<UserProfile | null> {
     try {
+      const now = Date.now();
+      if (cachedProfile && cachedProfile.uid === uid && now - lastProfileFetch < 5 * 60 * 1000) {
+        return cachedProfile;
+      }
       const docRef = doc(db, 'users', uid);
       const docSnap = await getDoc(docRef);
-      return docSnap.exists() ? (docSnap.data() as UserProfile) : null;
+      if (docSnap.exists()) {
+        const profile = docSnap.data() as UserProfile;
+        cachedProfile = profile;
+        lastProfileFetch = now;
+        return profile;
+      }
+      return null;
     } catch (error) {
       handleFirestoreError(error, OperationType.GET, `users/${uid}`);
       return null;

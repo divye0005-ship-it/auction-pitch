@@ -287,14 +287,33 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
     }
   };
 
+  // Refs for bot logic to avoid constant re-rendering
+  const timeLeftRef = React.useRef(timeLeft);
+  const currentBidRef = React.useRef(currentBid);
+  const currentBidderIdRef = React.useRef(currentBidderId);
+  const roomPursesRef = React.useRef(room.purses);
+  const roomSquadsRef = React.useRef(room.squads);
+
+  useEffect(() => {
+    timeLeftRef.current = timeLeft;
+    currentBidRef.current = currentBid;
+    currentBidderIdRef.current = currentBidderId;
+    roomPursesRef.current = room.purses;
+    roomSquadsRef.current = room.squads;
+  }, [timeLeft, currentBid, currentBidderId, room.purses, room.squads]);
+
   // Bot Logic
   useEffect(() => {
     const botPlayers = playersArr.filter(p => p.isBot);
     if (botPlayers.length > 0 && room.hostId === user.uid && room.status === 'active' && currentPlayer) {
       const botInterval = setInterval(() => {
         botPlayers.forEach(bot => {
-          const botPurse = room.purses[bot.uid] || 0;
-          const botSquad = room.squads[bot.uid] || [];
+          const tLeft = timeLeftRef.current;
+          const cBid = currentBidRef.current;
+          const cBidderId = currentBidderIdRef.current;
+          
+          const botPurse = roomPursesRef.current[bot.uid] || 0;
+          const botSquad = roomSquadsRef.current[bot.uid] || [];
           
           // Bot Personalities based on UID hash
           const botHash = bot.uid.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
@@ -314,7 +333,7 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
           const avgBudgetPerPlayer = playersNeeded > 0 ? botPurse / playersNeeded : 0;
           
           // If the bid is way above average budget and player isn't a star, be cautious
-          if (currentBid > avgBudgetPerPlayer * 1.5 && currentPlayer.auctionScore < 85) {
+          if (cBid > avgBudgetPerPlayer * 1.5 && currentPlayer.auctionScore < 85) {
             valuationMultiplier *= 0.6;
           }
 
@@ -334,15 +353,15 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
           
           // Bots become extremely aggressive as time runs out or if they have few players
           const squadUrgency = botSquad.length < 5 ? 0.98 : botSquad.length < 11 ? 0.8 : 0.4;
-          const timeUrgency = timeLeft <= 2 ? 0.99 : timeLeft <= 5 ? 0.85 : squadUrgency;
+          const timeUrgency = tLeft <= 2 ? 0.99 : tLeft <= 5 ? 0.85 : squadUrgency;
           
           // Only bid if not already the highest bidder and within valuation
-          const nextBid = getNextBidAmount(currentBid, currentPlayer.basePrice);
+          const nextBid = getNextBidAmount(cBid, currentPlayer.basePrice);
           const maxBidLimit = currentPlayer.auctionScore > 950 ? 3000 : 500; // 30 Crores for score > 950, else 5 Crores limit
 
-          if (botSquad.length < 25 && currentBidderId !== bot.uid && currentBid < valuation && nextBid <= maxBidLimit && botPurse > currentBid + 50) {
+          if (botSquad.length < 25 && cBidderId !== bot.uid && cBid < valuation && nextBid <= maxBidLimit && botPurse > cBid + 50) {
             // Higher probability of bidding if valuation is much higher than current bid
-            const valuationGap = (valuation - currentBid) / valuation;
+            const valuationGap = (valuation - cBid) / valuation;
             let bidProbability = Math.max(timeUrgency * 0.4, valuationGap * 0.8);
             
             // Bots don't bid every single time, they "wait and watch"
@@ -353,18 +372,19 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
 
             if (Math.random() < bidProbability) { 
               setTimeout(() => {
-                if (botPurse >= nextBid) {
+                // Check refs AGAIN in timeout to avoid racing bids
+                if (roomPursesRef.current[bot.uid] >= nextBid && currentBidRef.current === cBid) {
                   dbService.bidOnPlayer(room.roomId, bot.uid, nextBid, room.revealTimer, currentPlayer.basePrice)
-                    .catch(err => console.log("Bot bid failed (likely race condition):", err.message));
+                    .catch(err => console.log("Bot bid failed:", err.message));
                 }
               }, botDelay);
             }
           }
         });
-      }, 800); // Slightly slower check to feel more human
+      }, 1200); // Slower check to reduce DB writes
       return () => clearInterval(botInterval);
     }
-  }, [currentBid, currentBidderId, room.hostId, user.uid, currentPlayer, playersArr, room.purses, room.revealTimer, room.roomId, room.status, timeLeft, allPlayers]);
+  }, [room.hostId, user.uid, currentPlayer, playersArr, room.revealTimer, room.roomId, room.status, allPlayers]);
 
   const timerPercentage = (timeLeft / room.revealTimer) * 100;
 
