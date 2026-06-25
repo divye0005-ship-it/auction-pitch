@@ -98,15 +98,13 @@ const RoomLobby: React.FC<RoomLobbyProps> = ({ room, user, onLeave, onShowSuppor
             >
               Quit
             </button>
-            {isHost && (
-              <button 
-                onClick={startAuction}
-                className="flex-1 md:flex-none px-10 py-4 rounded-2xl bg-gradient-to-r from-cyan-400 to-purple-600 text-white font-black uppercase text-xs tracking-[0.2em] shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-3"
-              >
-                <Play className="w-4 h-4 fill-current" />
-                Start Game
-              </button>
-            )}
+            <button 
+              onClick={startAuction}
+              className="flex-1 md:flex-none px-10 py-4 rounded-2xl bg-gradient-to-r from-cyan-400 to-purple-600 text-white font-black uppercase text-xs tracking-[0.2em] shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-3"
+            >
+              <Play className="w-4 h-4 fill-current" />
+              {isHost ? "Start Game" : "Force Start"}
+            </button>
           </div>
         </div>
 

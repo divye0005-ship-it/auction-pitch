@@ -142,20 +142,27 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
 
   // Select next player if none active
   useEffect(() => {
-    if (room.status === 'active' && !room.currentPlayerId && room.hostId === user.uid) {
-      const availablePlayers = allPlayers.filter(p => !room.auctionedPlayerIds.includes(p.playerId));
-      if (availablePlayers.length === 0) {
-        dbService.updateRoom(room.roomId, { status: 'finished' });
-        return;
-      }
-      const nextPlayer = availablePlayers[Math.floor(Math.random() * availablePlayers.length)];
-      dbService.updateRoom(room.roomId, { 
-        currentPlayerId: nextPlayer.playerId,
-        currentBidAmount: 0,
-        currentBidderId: null,
-        timerEnd: Date.now() + (room.revealTimer * 1000),
-        skipVotes: []
-      });
+    if (room.status === 'active' && !room.currentPlayerId) {
+      const isHost = room.hostId === user.uid;
+      const delay = isHost ? 0 : 5000; // Host picks immediately, others wait 5 seconds as fallback
+      
+      const timeoutId = setTimeout(() => {
+        const availablePlayers = allPlayers.filter(p => !room.auctionedPlayerIds.includes(p.playerId));
+        if (availablePlayers.length === 0) {
+          dbService.updateRoom(room.roomId, { status: 'finished' });
+          return;
+        }
+        const nextPlayer = availablePlayers[Math.floor(Math.random() * availablePlayers.length)];
+        dbService.updateRoom(room.roomId, { 
+          currentPlayerId: nextPlayer.playerId,
+          currentBidAmount: 0,
+          currentBidderId: null,
+          timerEnd: Date.now() + (room.revealTimer * 1000),
+          skipVotes: []
+        }).catch(err => console.log('Next player selection race condition handled:', err.message));
+      }, delay);
+      
+      return () => clearTimeout(timeoutId);
     }
   }, [room.status, room.currentPlayerId, room.hostId, user.uid, allPlayers, room.auctionedPlayerIds, room.revealTimer, room.roomId]);
 
