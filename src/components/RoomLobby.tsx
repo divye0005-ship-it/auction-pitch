@@ -54,36 +54,36 @@ const RoomLobby: React.FC<RoomLobbyProps> = ({ room, user, onLeave, onShowSuppor
   };
 
   return (
-    <div className="flex-1 p-8 max-w-6xl mx-auto w-full overflow-y-auto">
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+    <div className="flex-1 p-4 sm:p-6 md:p-8 max-w-6xl mx-auto w-full overflow-y-auto">
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-6">
         
         {/* Room Info Header */}
-        <div className="md:col-span-12 bento-item glass-dark flex flex-col md:flex-row items-center justify-between gap-8">
-          <div className="flex items-center gap-8">
-            <div className="flex flex-col">
+        <div className="md:col-span-12 bento-item glass-dark flex flex-col lg:flex-row lg:items-center justify-between gap-6 md:gap-8">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 sm:gap-8 w-full lg:w-auto">
+            <div className="flex flex-col w-full sm:w-auto">
               <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-2">{room.title || 'Room Code'}</span>
-              <div className="flex items-center gap-4">
-                <div className="text-5xl font-black font-display tracking-widest text-cyan-400">{room.roomId}</div>
+              <div className="flex items-center justify-between sm:justify-start gap-4">
+                <div className="text-4xl sm:text-5xl font-black font-display tracking-widest text-cyan-400 break-all">{room.roomId}</div>
                 <button 
                   onClick={handleCopyCode}
-                  className="p-3 rounded-xl glass text-slate-400 hover:text-white transition-all"
+                  className="p-3 rounded-xl glass text-slate-400 hover:text-white transition-all flex-shrink-0"
                 >
                   {isCopied ? <Check className="w-5 h-5 text-green-500" /> : <Copy className="w-5 h-5" />}
                 </button>
               </div>
             </div>
-            <div className="h-12 w-px bg-white/10 hidden md:block"></div>
-            <div className="flex gap-6">
+            <div className="h-px w-full sm:w-px sm:h-12 bg-white/10 block sm:hidden md:block"></div>
+            <div className="flex justify-between sm:justify-start gap-6 w-full sm:w-auto border-t border-white/10 sm:border-0 pt-4 sm:pt-0">
               <div className="flex flex-col">
                 <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1">Players</span>
-                <div className="flex items-center gap-2 font-black">
+                <div className="flex items-center gap-2 font-black text-sm md:text-base">
                   <Users className="w-4 h-4 text-purple-400" />
                   {playersArr.length}/{room.playersCount}
                 </div>
               </div>
               <div className="flex flex-col">
                 <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1">Timer</span>
-                <div className="flex items-center gap-2 font-black">
+                <div className="flex items-center gap-2 font-black text-sm md:text-base">
                   <Clock className="w-4 h-4 text-yellow-400" />
                   {room.revealTimer}s
                 </div>
@@ -91,19 +91,19 @@ const RoomLobby: React.FC<RoomLobbyProps> = ({ room, user, onLeave, onShowSuppor
             </div>
           </div>
 
-          <div className="flex gap-4 w-full md:w-auto">
+          <div className="flex gap-3 sm:gap-4 w-full lg:w-auto mt-2 lg:mt-0">
             <button 
               onClick={onLeave}
-              className="flex-1 md:flex-none px-8 py-4 rounded-2xl glass text-slate-400 hover:text-red-500 hover:bg-red-500/10 transition-all font-black uppercase text-xs tracking-widest"
+              className="flex-1 lg:flex-none px-4 sm:px-8 py-3 sm:py-4 rounded-2xl glass text-slate-400 hover:text-red-500 hover:bg-red-500/10 transition-all font-black uppercase text-xs tracking-widest"
             >
               Quit
             </button>
             <button 
               onClick={startAuction}
-              className="flex-1 md:flex-none px-10 py-4 rounded-2xl bg-gradient-to-r from-cyan-400 to-purple-600 text-white font-black uppercase text-xs tracking-[0.2em] shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-3"
+              className="flex-[2] lg:flex-none px-4 sm:px-10 py-3 sm:py-4 rounded-2xl bg-gradient-to-r from-cyan-400 to-purple-600 text-white font-black uppercase text-xs tracking-[0.2em] shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-2 sm:gap-3"
             >
-              <Play className="w-4 h-4 fill-current" />
-              {isHost ? "Start Game" : "Force Start"}
+              <Play className="w-4 h-4 fill-current flex-shrink-0" />
+              <span className="truncate">{isHost ? "Start Game" : "Force Start"}</span>
             </button>
           </div>
         </div>
