@@ -11,10 +11,10 @@ export interface UserProfile {
 export interface Player {
   playerId: string;
   name: string;
-  team: string;
-  role: 'Batter' | 'Bowler' | 'All-Rounder' | 'Wicket-Keeper';
+  team: string; // Used as Brand for cars
+  role: 'Batter' | 'Bowler' | 'All-Rounder' | 'Wicket-Keeper' | 'Hypercar' | 'Sports Car' | 'Luxury' | string;
   photoUrl?: string;
-  country: string;
+  country: string; // Used as Brand Logo/Name for cars
   stats: {
     runs?: number;
     avg?: number;
@@ -25,6 +25,9 @@ export interface Player {
     economy?: number;
     bowlAvg?: number;
     hauls?: number;
+    hp?: number; // Car HP
+    topSpeed?: number; // Car Top Speed
+    value?: string; // Car Value
   };
   auctionScore: number;
   basePrice: number;
@@ -32,6 +35,7 @@ export interface Player {
 
 export interface Room {
   roomId: string;
+  category?: 'ipl' | 'car' | 'real_estate';
   title?: string;
   hostId: string;
   playersCount: number;

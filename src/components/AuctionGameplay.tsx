@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
+import LuxuryImage from './LuxuryImage';
 import { motion, AnimatePresence } from 'motion/react';
 import { Room, Player, UserProfile } from '../types';
 import { dbService } from '../services/dbService';
 import AuctionCard from './AuctionCard';
+import CarAuctionCard from './CarAuctionCard';
 import { getNextBidAmount } from '../lib/auctionUtils';
 import { Zap, Plus, Timer as TimerIcon, Wallet, Users, SkipForward, Trophy, TrendingUp, Volume2, VolumeX } from 'lucide-react';
 
@@ -173,7 +175,7 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
       if (p && p.playerId !== currentPlayer?.playerId) {
         setCurrentPlayer(p);
         // Immediate announcement
-        speak(`Next player: ${p.name}. Base price: ${p.basePrice >= 100 ? (p.basePrice/100).toFixed(2) + ' Crore' : p.basePrice + ' Lakhs'}`);
+        speak(`Next ${room.category === 'car' ? 'car' : 'player'}: ${p.name.replace(/RS/g, 'R S ')}. Base price: ${p.basePrice >= 100 ? (p.basePrice/100).toFixed(2) + ' Crore' : p.basePrice + ' Lakhs'}`);
       }
     }
   }, [room.currentPlayerId, playerMap, currentPlayer, speak]);
@@ -408,10 +410,11 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
         {/* Left Column: Player Card */}
         <div className="lg:col-span-5 flex flex-col items-center justify-center gap-6 md:gap-8">
           <div className="relative w-full max-w-[280px] sm:max-w-md">
-            <AuctionCard 
-              player={currentPlayer} 
-              isRevealed={true} 
-            />
+            {room.category === 'car' ? (
+              <CarAuctionCard player={currentPlayer} />
+            ) : (
+              <AuctionCard player={currentPlayer} isRevealed={true} />
+            )}
             
             {/* Timer Ring */}
             <div className="absolute -top-4 -right-4 md:-top-6 md:-right-6 w-16 h-16 md:w-24 md:h-24">

@@ -3,6 +3,7 @@ import {
   doc, getDoc, setDoc, collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, getDocs, serverTimestamp, getCountFromServer, orderBy, limit
 } from 'firebase/firestore';
 import { UserProfile, Room, Player, Message } from '../types';
+import { generateRoomId } from '../lib/auctionUtils';
 import { getNextBidAmount } from '../lib/auctionUtils';
 
 enum OperationType {
@@ -66,6 +67,60 @@ let cachedProfile: UserProfile | null = null;
 let lastProfileFetch = 0;
 
 export const dbService = {
+  async updatePresence(uid: string, mode: string): Promise<void> {
+    try {
+      await setDoc(doc(db, 'presence', uid), { mode, lastSeen: serverTimestamp() }, { merge: true });
+    } catch (e) {}
+  },
+  async removePresence(uid: string): Promise<void> {
+    try {
+      await deleteDoc(doc(db, 'presence', uid));
+    } catch (e) {}
+  },
+  async findAvailableRoom(category: string): Promise<string | null> {
+    try {
+      const q = query(collection(db, 'rooms'), where('category', '==', category), where('status', '==', 'waiting'), where('isPublic', '==', true));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        // Find one with < max players
+        for (const d of snap.docs) {
+          const room = d.data() as Room;
+          const humanPlayers = Object.values(room.players).filter((p: any) => !p.isBot).length;
+          if (humanPlayers < room.playersCount) {
+            return room.roomId;
+          }
+        }
+      }
+      return null;
+    } catch (e) { return null; }
+  },
+  async createMatchmakingRoom(category: string, user: UserProfile): Promise<string> {
+    const roomId = generateRoomId();
+    const newRoom: Room = {
+      roomId,
+      category: category as any,
+      title: `${category.toUpperCase()} Match`,
+      hostId: user.uid,
+      playersCount: 2,
+      revealTimer: 10,
+      isPublic: true,
+      status: 'waiting',
+      players: { [user.uid]: { uid: user.uid, displayName: user.displayName, photoURL: user.photoURL } },
+      squads: { [user.uid]: [] },
+      purses: { [user.uid]: 10000 },
+      auctionedPlayerIds: [],
+      skipVotes: [],
+      createdAt: serverTimestamp() as any
+    };
+    await setDoc(doc(db, 'rooms', roomId), newRoom);
+    return roomId;
+  },
+  async startMatchmakingRoom(roomId: string): Promise<void> {
+    try {
+      await updateDoc(doc(db, 'rooms', roomId), { status: 'active' });
+    } catch(e) {}
+  },
+
   // User Profile
   async getUserProfile(uid: string): Promise<UserProfile | null> {
     try {

@@ -4,13 +4,18 @@ import { db, auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged,
 import { collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
 import { dbService } from './services/dbService';
 import { IPL_PLAYERS } from './services/playerData';
+import { CAR_DATA } from './services/carData';
+import { generateRoomId } from './lib/auctionUtils';
 import { UserProfile, Room, Player } from './types';
 import RoomLobby from './components/RoomLobby';
 import AuctionGameplay from './components/AuctionGameplay';
 import ResultsScreen from './components/ResultsScreen';
+import MatchmakingScreen from './components/MatchmakingScreen';
 import ChatPanel from './components/ChatPanel';
 import Leaderboard from './components/Leaderboard';
-import { Trophy, Plus, Users, LogIn, LogOut, Sun, Moon, Mail, ChevronRight, Play, LayoutDashboard, User as UserIcon, ArrowLeft, Award, Volume2, VolumeX, Zap, MessageSquare, Shield, Sparkles, Star, BookOpen, Info, HelpCircle, CheckCircle2, AlertCircle, Instagram, Send, Trash2, ExternalLink, Wallet, TrendingUp, ShieldCheck, X, Share2, Copy, Check } from 'lucide-react';
+import HomeTab from './components/HomeTab';
+import ProfileTab from './components/ProfileTab';
+import { Trophy, Plus, Users, LogIn, LogOut, Sun, Moon, Mail, ChevronRight, Play, LayoutDashboard, User as UserIcon, ArrowLeft, Award, Volume2, VolumeX, Zap, MessageSquare, Shield, Sparkles, Star, BookOpen, Info, HelpCircle, CheckCircle2, AlertCircle, Instagram, Send, Trash2, ExternalLink, Wallet, TrendingUp, ShieldCheck, X, Share2, Copy, Check, Car, Home as HomeIconLucide } from 'lucide-react';
 
 
 
@@ -124,7 +129,7 @@ export default function App() {
   const [isCreating, setIsCreating] = useState(false);
   const [createOptions, setCreateOptions] = useState({ players: 5, timer: 15, isPublic: true, includeBots: false });
   const [publicRooms, setPublicRooms] = useState<Room[]>([]);
-  const [currentView, setCurrentView] = useState<'play' | 'rooms' | 'leaderboard' | 'profile'>('play');
+  const [currentView, setCurrentView] = useState<'home' | 'rooms' | 'leaderboard' | 'profile'>('home');
 
   const testVoice = () => {
     if (!window.speechSynthesis) return;
@@ -386,11 +391,15 @@ export default function App() {
 
   // Removed client-side periodic cleanup to prevent Firestore free-tier read quota exhaustion
 
-  const generateRoomId = () => {
-    return Math.random().toString(36).substring(2, 8).toUpperCase();
+  
+  
+  const [matchmakingCategory, setMatchmakingCategory] = useState<any>('ipl');
+  const handleJoinMatchmaking = (category: string) => {
+    setMatchmakingCategory(category);
+    setCurrentView('matchmaking');
   };
 
-  const handleCreateRoom = async () => {
+  const handleCreateRoom = async (category: any = 'ipl') => {
     if (!user || isCreating) return;
     if (user.role === 'guest' && guestGamePlayed) {
       alert("You have already played your free guest game. Please sign in with Google to continue playing!");
@@ -406,6 +415,7 @@ export default function App() {
 
       const newRoom: Room = {
         roomId,
+        category,
         title: `${user.displayName}'s Auction`,
         hostId: user.uid,
         playersCount: createOptions.players,
@@ -429,7 +439,7 @@ export default function App() {
     }
   };
 
-  const handlePlaySolo = async () => {
+  const handlePlaySolo = async (category: any = 'ipl') => {
     if (!user || isCreating) return;
     if (user.role === 'guest' && guestGamePlayed) {
       alert("You have already played your free guest game. Please sign in with Google to continue playing!");
@@ -457,6 +467,7 @@ export default function App() {
 
       const newRoom: Room = {
         roomId,
+        category,
         title: `${user.displayName}'s Solo Auction`,
         hostId: user.uid,
         playersCount: 2,
@@ -807,525 +818,43 @@ export default function App() {
               </button>
             </div>
           </div>
-
-          <div className="flex-1 pb-24 md:pb-0">
             {currentView === 'leaderboard' ? (
-              <Leaderboard onBack={() => setCurrentView('play')} />
+              <Leaderboard onBack={() => setCurrentView('home')} />
             ) : currentView === 'profile' ? (
-              <div className="flex-1 flex flex-col items-center justify-center py-12">
-                <div className="w-full max-w-2xl bento-item glass-dark relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-64 h-64 bg-purple-500/5 blur-[100px] rounded-full -mr-32 -mt-32"></div>
-                  
-                  <button 
-                    onClick={() => setCurrentView('play')}
-                    className="absolute top-8 left-8 p-3 rounded-xl glass hover:bg-white/10 transition-all text-slate-400 hover:text-white"
-                  >
-                    <ArrowLeft className="w-5 h-5" />
-                  </button>
-
-                  {/* Theme Toggle in Profile */}
-                  <button 
-                    onClick={() => setIsDarkMode(!isDarkMode)}
-                    className="absolute top-8 right-8 p-3 rounded-xl glass text-cyan-400 hover:scale-110 transition-all"
-                  >
-                    {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-                  </button>
-
-                  <div className="flex flex-col items-center text-center pt-12 pb-8">
-                    <div className="relative mb-8 group">
-                      <img src={user.photoURL} className="w-32 h-32 rounded-[2.5rem] border-4 border-cyan-500/30 p-2 object-cover" alt="" />
-                      <div className="absolute -bottom-2 -right-2 bg-gradient-to-br from-cyan-400 to-purple-600 p-3 rounded-2xl shadow-xl">
-                        <Award className="w-6 h-6 text-white" />
-                      </div>
-                    </div>
-                                   {isEditingProfile ? (
-                      <div className="w-full max-w-md space-y-6 mb-8">
-                        <div className="flex flex-col items-start gap-2">
-                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Username</label>
-                          <input 
-                            type="text"
-                            value={editName}
-                            onChange={(e) => setEditName(e.target.value)}
-                            className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-lg font-black tracking-tight focus:outline-none focus:border-cyan-500 focus:bg-white/10 transition-all"
-                            placeholder="Enter unique username"
-                          />
-                        </div>
-                        
-                        <div className="flex flex-col items-start gap-4">
-                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Choose Avatar</label>
-                          <div className="grid grid-cols-4 gap-3 w-full">
-                            {[
-                              'https://api.dicebear.com/7.x/avataaars/svg?seed=Felix',
-                              'https://api.dicebear.com/7.x/avataaars/svg?seed=Aneka',
-                              'https://api.dicebear.com/7.x/avataaars/svg?seed=Jack',
-                              'https://api.dicebear.com/7.x/avataaars/svg?seed=Mimi',
-                              'https://api.dicebear.com/7.x/avataaars/svg?seed=Casper',
-                              'https://api.dicebear.com/7.x/avataaars/svg?seed=Toby',
-                              'https://api.dicebear.com/7.x/avataaars/svg?seed=Luna',
-                              'https://api.dicebear.com/7.x/avataaars/svg?seed=Oliver'
-                            ].map((avatar) => (
-                              <button
-                                key={avatar}
-                                onClick={() => setEditPhoto(avatar)}
-                                className={`relative aspect-square rounded-xl overflow-hidden border-2 transition-all ${editPhoto === avatar ? 'border-cyan-400 scale-110 shadow-lg shadow-cyan-400/20' : 'border-transparent opacity-50 hover:opacity-100'}`}
-                              >
-                                <img src={avatar} className="w-full h-full object-cover" alt="Avatar" />
-                              </button>
-                            ))}
-                          </div>
-                          <div className="w-full flex flex-col gap-2">
-                            <span className="text-[9px] font-bold text-slate-600 uppercase text-center">Or provide custom URL</span>
-                            <input 
-                              type="text"
-                              value={editPhoto}
-                              onChange={(e) => setEditPhoto(e.target.value)}
-                              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs font-medium focus:outline-none focus:border-cyan-500 transition-all"
-                              placeholder="https://example.com/photo.jpg"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="flex gap-4 pt-4">
-                          <button 
-                            onClick={handleUpdateProfile}
-                            disabled={isSavingProfile}
-                            className="flex-1 py-4 rounded-2xl bg-cyan-500 text-black font-black uppercase tracking-widest text-xs hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
-                          >
-                            {isSavingProfile ? 'Saving...' : 'Save Profile'}
-                          </button>
-                          <button 
-                            onClick={() => setIsEditingProfile(false)}
-                            className="flex-1 py-4 rounded-2xl glass text-slate-400 font-black uppercase tracking-widest text-xs hover:bg-white/10 transition-all"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <h2 className="text-4xl font-black uppercase tracking-tighter font-display mb-2">{user.displayName}</h2>
-                        <p className="text-slate-500 font-bold uppercase tracking-[0.3em] text-xs mb-8">{user.email || 'Guest Account'}</p>
-
-                        <div className="flex flex-wrap justify-center gap-4 mb-12">
-                          {user.role !== 'guest' ? (
-                            <button 
-                              onClick={() => {
-                                setEditName(user.displayName);
-                                setEditPhoto(user.photoURL || '');
-                                setIsEditingProfile(true);
-                              }}
-                              className="px-6 py-3 rounded-xl glass hover:bg-white/10 text-white text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2"
-                            >
-                              <UserIcon className="w-4 h-4" />
-                              Edit Profile
-                            </button>
-                          ) : (
-                            <div className="px-6 py-3 rounded-xl bg-orange-500/10 text-orange-400 text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
-                              <Shield className="w-4 h-4" />
-                              Guest (No Editing)
-                            </div>
-                          )}
-                          <button 
-                            onClick={() => setShowHowToPlay(!showHowToPlay)}
-                            className="px-6 py-3 rounded-xl glass hover:bg-purple-500/10 text-purple-400 text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2"
-                          >
-                            <BookOpen className="w-4 h-4" />
-                            How to Play
-                          </button>
-                          <button 
-                            onClick={testVoice}
-                            className="px-6 py-3 rounded-xl glass hover:bg-cyan-500/10 text-cyan-400 text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2"
-                          >
-                            <Volume2 className="w-4 h-4" />
-                            Test Voice
-                          </button>
-                        </div>
-                        
-                        <AnimatePresence>
-                          {showHowToPlay && (
-                            <motion.div 
-                              initial={{ opacity: 0, height: 0 }}
-                              animate={{ opacity: 1, height: 'auto' }}
-                              exit={{ opacity: 0, height: 0 }}
-                              className="w-full mb-8 overflow-hidden"
-                            >
-                              <div className="p-8 rounded-3xl bg-white/5 border border-cyan-500/20 text-slate-300 text-sm space-y-6 leading-relaxed text-left">
-                                <div className="flex flex-col md:flex-row items-center justify-between gap-4 p-6 rounded-2xl bg-white/5 border border-white/10">
-                                  <div className="flex flex-col">
-                                    <span className="text-xs font-black uppercase text-cyan-400 tracking-wider">Video Tutorial</span>
-                                    <span className="text-[10px] font-bold text-slate-400">Watch our quick guide for better understanding</span>
-                                  </div>
-                                  <a 
-                                    href="https://youtube.com/shorts/QCKFZFwpIck?si=pPPDq674_eN4PJex" 
-                                    target="_blank" 
-                                    rel="noopener noreferrer"
-                                    className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-red-500 text-white hover:bg-red-600 transition-all text-[10px] font-black uppercase tracking-widest shadow-lg shadow-red-500/20"
-                                  >
-                                    <Play className="w-3 h-3 fill-current" />
-                                    Watch Now
-                                  </a>
-                                </div>
-
-                                <div>
-                                  <h3 className="text-cyan-400 font-black uppercase tracking-widest text-xs mb-4">Quick Rules</h3>
-                                  <ol className="space-y-3 list-decimal list-inside font-bold">
-                                    <li>Create room or join room from public or private room using your friends code.</li>
-                                    <li>You can create a room of 2, 3, 5, 10 and if you're in a hurry you can reduce the bid time to 10 seconds.</li>
-                                    <li>If you're playing alone, you can also create a room with bots. It's an IPL auction expert.</li>
-                                    <li>Place bids and win to add that particular player to your dream team.</li>
-                                    <li>The player with the highest total squad score wins the battle.</li>
-                                    <li>You can choose dark theme or white theme in the profile section.</li>
-                                    <li>You can also choose your name in the profile section.</li>
-                                  </ol>
-                                </div>
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </>
-                    )}
-
-                    <div className="grid grid-cols-2 gap-6 w-full">
-                      <div className="p-8 rounded-3xl bg-white/5 border border-white/10 flex flex-col items-center">
-                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Total Winnings</span>
-                        <div className="text-5xl font-black font-display text-cyan-400">{user.totalWinnings || 0}</div>
-                        <span className="text-[9px] font-bold text-cyan-500/50 uppercase mt-2">Points Earned</span>
-                      </div>
-                      <div className="p-8 rounded-3xl bg-white/5 border border-white/10 flex flex-col items-center">
-                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Rank</span>
-                        <div className="text-5xl font-black font-display text-purple-400">#{userRank || '--'}</div>
-                        <span className="text-[9px] font-bold text-purple-500/50 uppercase mt-2">Global Standing</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : currentView === 'rooms' ? (
-              <div className="bento-item glass-dark">
-                <div className="flex items-center justify-between mb-8">
-                  <h2 className="text-3xl font-black uppercase tracking-tighter font-display">Public Auctions</h2>
-                  <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3">
-                    <button 
-                      onClick={fetchPublicRooms}
-                      className="px-4 py-2 rounded-xl glass hover:bg-white/10 transition-all text-slate-300 text-[10px] font-black uppercase tracking-widest flex items-center gap-2"
-                    >
-                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                      Refresh
-                    </button>
-                    <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-green-500/10 text-green-400 text-[10px] font-black uppercase tracking-widest">
-                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                      {publicRooms.length} Live Rooms
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <AnimatePresence mode="popLayout">
-                    {publicRooms.map((r, idx) => (
-                      <motion.div 
-                        key={r.roomId}
-                        initial={{ opacity: 0, scale: 0.9 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.9 }}
-                        transition={{ delay: idx * 0.05 }}
-                        className="p-6 rounded-3xl bg-white/5 border border-white/5 hover:border-cyan-400/30 transition-all group flex flex-col justify-between"
-                      >
-                        <div className="flex items-center justify-between mb-6">
-                          <div className="flex flex-col">
-                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">{r.title || `Room ${r.roomId}`}</span>
-                            <span className="text-xl font-black font-display text-cyan-400">{r.roomId}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {isAdmin && (
-                              <button 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteRoom(r.roomId);
-                                }}
-                                className="p-2 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all z-20"
-                                title="Delete Room (Admin Only)"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            )}
-                            <div className="flex -space-x-3">
-                              {(Object.values(r.players) as any[]).slice(0, 3).map((p) => (
-                                <img key={p.uid} src={p.photoURL} className="w-8 h-8 rounded-full border-2 border-[#050505]" alt="" />
-                              ))}
-                              {Object.values(r.players).length > 3 && (
-                                <div className="w-8 h-8 rounded-full bg-slate-800 border-2 border-[#050505] flex items-center justify-center text-[10px] font-black">
-                                  +{Object.values(r.players).length - 3}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <div className="flex items-center justify-between mb-6">
-                          <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
-                            <Users className="w-4 h-4" />
-                            {Object.values(r.players).length}/{r.playersCount}
-                          </div>
-                          <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
-                            <Play className="w-4 h-4" />
-                            {r.revealTimer}s
-                          </div>
-                        </div>
-                        
-                        <button 
-                          onClick={() => handleJoinRoomById(r.roomId)}
-                          className="w-full py-3 rounded-xl bg-white/5 group-hover:bg-cyan-400 group-hover:text-black text-white font-black text-[10px] uppercase tracking-widest transition-all"
-                        >
-                          Join Auction
-                        </button>
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
-                  
-                  {publicRooms.length === 0 && (
-                    <div className="col-span-full py-12 flex flex-col items-center justify-center text-slate-500 gap-4 opacity-50">
-                      <Users className="w-12 h-12" />
-                      <p className="text-xs font-black uppercase tracking-widest">No public rooms available. Create one!</p>
-                    </div>
-                  )}
-                </div>
-              </div>
+              <ProfileTab
+                user={user}
+                isDarkMode={isDarkMode}
+                setIsDarkMode={setIsDarkMode}
+                isMuted={isMuted}
+                setIsMuted={setIsMuted}
+                onLogout={handleLogout}
+              />
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-                {/* Resume or Recent Room Card */}
-                <AnimatePresence mode="wait">
-                  {resumableRoom ? (
-                    <motion.div 
-                      key="resume"
-                      initial={{ opacity: 0, y: -20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -20 }}
-                      className="md:col-span-12 bento-item bg-gradient-to-r from-cyan-500/20 to-purple-600/20 border-cyan-400/30 relative overflow-hidden group mb-4"
-                    >
-                      <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-                        <div className="flex items-center gap-6">
-                          <div className="w-16 h-16 rounded-2xl bg-cyan-500/20 flex items-center justify-center">
-                            <Zap className="w-8 h-8 text-cyan-400 animate-pulse" />
-                          </div>
-                          <div className="text-left">
-                            <span className="text-[10px] font-black text-cyan-400 uppercase tracking-[0.3em] mb-1 block">Active Session Found</span>
-                            <h3 className="text-2xl font-black uppercase tracking-tight text-white">Resume Your Auction</h3>
-                            <p className="text-slate-400 font-bold text-xs">Room: {resumableRoom.roomId} • {Object.keys(resumableRoom.players).length} Players</p>
-                          </div>
-                        </div>
-                        <button 
-                          onClick={() => setRoom(resumableRoom)}
-                          className="w-full md:w-auto px-10 py-4 rounded-2xl bg-cyan-400 text-black font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-[0_0_30px_rgba(34,211,238,0.4)]"
-                        >
-                          Resume Now
-                        </button>
-                      </div>
-                    </motion.div>
-                  ) : latestPublicRoom ? (
-                    <motion.div 
-                      key="latest"
-                      initial={{ opacity: 0, y: -20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -20 }}
-                      className="md:col-span-12 bento-item bg-gradient-to-r from-orange-500/10 to-transparent border-orange-500/30 relative overflow-hidden group mb-4"
-                    >
-                      <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-                        <div className="flex items-center gap-6">
-                          <div className="w-16 h-16 rounded-2xl bg-orange-500/20 flex items-center justify-center">
-                            <Sparkles className="w-8 h-8 text-orange-400 animate-pulse" />
-                          </div>
-                          <div className="text-left">
-                            <span className="text-[10px] font-black text-orange-400 uppercase tracking-[0.3em] mb-1 block">Recent Public Auction</span>
-                            <h3 className="text-2xl font-black uppercase tracking-tight text-white">Join {latestPublicRoom.title || 'Live Room'}</h3>
-                            <p className="text-slate-400 font-bold text-xs">Room ID: {latestPublicRoom.roomId} • {Object.keys(latestPublicRoom.players).length}/{latestPublicRoom.playersCount} Players</p>
-                          </div>
-                        </div>
-                        <button 
-                          onClick={() => handleJoinRoomById(latestPublicRoom.roomId)}
-                          className="w-full md:w-auto px-10 py-4 rounded-2xl bg-orange-500 text-white font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-[0_0_30px_rgba(249,115,22,0.3)]"
-                        >
-                          Join Now
-                        </button>
-                      </div>
-                    </motion.div>
-                  ) : null}
-                </AnimatePresence>
-
-                {/* Create Room Card */}
-                <div className="md:col-span-12 bento-item glass-dark relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/5 blur-[80px] rounded-full -mr-32 -mt-32 group-hover:bg-cyan-500/10 transition-all duration-700"></div>
-                  
-                  <div className="flex items-center justify-between mb-10">
-                    <h2 className="text-4xl font-black uppercase tracking-tighter font-display">Create Room</h2>
-                    <button 
-                      onClick={() => setShowHowToPlay(!showHowToPlay)}
-                      className="p-3 rounded-xl glass hover:bg-white/10 transition-all text-cyan-400 hover:text-white flex items-center gap-2 text-[10px] font-black uppercase tracking-widest"
-                    >
-                      <BookOpen className="w-4 h-4" />
-                      How to Play
-                    </button>
-                  </div>
-
-                  {showHowToPlay && (
-                    <motion.div 
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="mb-10 p-6 rounded-2xl bg-white/5 border border-cyan-500/20 text-slate-300 text-xs space-y-6 leading-relaxed"
-                    >
-                      <div className="p-4 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between">
-                        <div className="flex flex-col">
-                          <span className="text-[10px] font-black uppercase text-cyan-400">Watch Tutorial</span>
-                          <span className="text-[8px] font-bold text-slate-500">Quick 60s guide</span>
-                        </div>
-                        <a 
-                          href="https://youtube.com/shorts/QCKFZFwpIck?si=pPPDq674_eN4PJex" 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500 text-white hover:bg-red-600 transition-all text-[10px] font-black uppercase tracking-widest shadow-lg shadow-red-500/20"
-                        >
-                          <Play className="w-3 h-3 fill-current" />
-                          Watch Now
-                        </a>
-                      </div>
-
-                      <div>
-                        <h3 className="text-cyan-400 font-black uppercase tracking-widest text-[10px] mb-3">Quick Rules</h3>
-                        <ol className="space-y-3 list-decimal list-inside font-bold">
-                          <li>Create room or join room from public or private room using your friends code.</li>
-                          <li>You can create a room of 2, 3, 5, 10 and if you're in a hurry you can reduce the bid time to 10 seconds.</li>
-                          <li>If you're playing alone, you can also create a room with bots. It's an IPL auction expert.</li>
-                          <li>Place bids and win to add that particular player to your dream team.</li>
-                          <li>The player with the highest total squad score wins the battle.</li>
-                          <li>You can choose dark theme or white theme in the profile section.</li>
-                          <li>You can also choose your name in the profile section.</li>
-                        </ol>
-                      </div>
-                    </motion.div>
-                  )}
-                  
-                  <div className="space-y-10 mb-12">
-                    <div className="flex flex-col">
-                      <span className="text-[12px] text-white uppercase font-black tracking-[0.2em] mb-4">Max Players</span>
-                      <div className="flex gap-3">
-                        {[2, 3, 5, 10].map(n => (
-                          <button 
-                            key={n}
-                            onClick={() => setCreateOptions({ ...createOptions, players: n })}
-                            className={`flex-1 py-4 rounded-2xl text-sm font-black transition-all duration-300 ${createOptions.players === n ? 'bg-cyan-500 text-black shadow-[0_0_20px_rgba(0,242,255,0.3)]' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}
-                          >
-                            {n}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col">
-                      <span className="text-[12px] text-white uppercase font-black tracking-[0.2em] mb-4">Bid Timer</span>
-                      <div className="flex gap-3">
-                        {[10, 15, 20].map(n => (
-                          <button 
-                            key={n}
-                            onClick={() => setCreateOptions({ ...createOptions, timer: n })}
-                            className={`flex-1 py-4 rounded-2xl text-sm font-black transition-all duration-300 ${createOptions.timer === n ? 'bg-purple-500 text-white shadow-[0_0_20px_rgba(168,85,247,0.3)]' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}
-                          >
-                            {n}s
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    
-                    <div className="flex flex-col">
-                      <span className="text-[12px] text-white uppercase font-black tracking-[0.2em] mb-4">Room Visibility</span>
-                      <div className="flex gap-3">
-                        {[true, false].map(v => (
-                          <button 
-                            key={v ? 'public' : 'private'}
-                            onClick={() => setCreateOptions({ ...createOptions, isPublic: v })}
-                            className={`flex-1 py-4 rounded-2xl text-sm font-black transition-all duration-300 ${createOptions.isPublic === v ? 'bg-orange-500 text-white shadow-[0_0_20px_rgba(249,115,22,0.3)]' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}
-                          >
-                            {v ? 'Public' : 'Private'}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-4">
-                    <button 
-                      onClick={handleCreateRoom}
-                      disabled={isCreating}
-                      className="w-full py-6 rounded-[1.5rem] bg-gradient-to-r from-cyan-400 to-purple-600 text-white font-black text-lg md:text-xl tracking-widest uppercase flex items-center justify-center gap-4 shadow-[0_0_30px_rgba(34,211,238,0.3)] hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isCreating ? (
-                        <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      ) : (
-                        <Plus className="w-6 h-6" />
-                      )}
-                      {isCreating ? 'Launching...' : 'Create Multiplayer Room'}
-                    </button>
-                    
-                    <div className="relative">
-                      <button 
-                        id="tour-solo-play"
-                        onClick={handlePlaySolo}
-                        disabled={isCreating}
-                        className="w-full py-6 rounded-[1.5rem] bg-gradient-to-r from-yellow-400 via-orange-500 to-red-600 text-white font-black text-lg md:text-xl tracking-widest uppercase flex items-center justify-center gap-4 shadow-[0_0_30px_rgba(245,158,11,0.3)] hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden"
-                      >
-                        {isCreating ? (
-                          <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        ) : (
-                          <Play className="w-6 h-6 fill-current" />
-                        )}
-                        {isCreating ? 'Starting...' : 'Play Solo'}
-                      </button>
-                      
-
-                    </div>
-                  </div>
-                </div>
-
-                {/* Join Room Card */}
-                <div className="md:col-span-5 bento-item glass-dark flex flex-col justify-between">
-                  <div>
-                    <h2 className="text-4xl font-black uppercase tracking-tighter mb-10 font-display">Join Room</h2>
-                    <p className="text-slate-500 text-sm font-bold mb-8">Got a code? Enter it below to jump into the action.</p>
-                  </div>
-                  
-                  <div className="space-y-4">
-                    <input 
-                      type="text"
-                      value={joinCode}
-                      onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-                      placeholder="CODE"
-                      className="w-full bg-white/5 border border-white/10 rounded-[1.5rem] px-8 py-6 text-2xl font-black tracking-[0.5em] uppercase focus:outline-none focus:border-cyan-500 focus:bg-white/10 transition-all text-center"
-                    />
-                    <button 
-                      onClick={handleJoinRoom}
-                      className="w-full py-6 rounded-[1.5rem] bg-white text-black font-black text-lg tracking-widest uppercase flex items-center justify-center gap-4 hover:bg-cyan-400 hover:text-black transition-all"
-                    >
-                      Join Now
-                      <ChevronRight className="w-6 h-6" />
-                    </button>
-                  </div>
-                </div>
-              </div>
+              <HomeTab 
+                user={user!}
+                setRoom={setRoom}
+                setCurrentView={setCurrentView}
+                handleCreateRoom={handleCreateRoom}
+                handlePlaySolo={handlePlaySolo}
+                handleJoinMatchmaking={handleJoinMatchmaking}
+              />
             )}
-          </div>
 
           {/* Bottom Navigation Bar */}
           <div className="fixed bottom-0 left-0 right-0 bg-[#050505]/80 backdrop-blur-xl border-t border-white/10 px-6 py-4 z-50">
             <div className="max-w-md mx-auto flex items-center justify-between">
               <button 
-                onClick={() => setCurrentView('play')}
-                className={`flex flex-col items-center gap-1 transition-all ${currentView === 'play' ? 'text-cyan-400' : 'text-slate-500'}`}
+                onClick={() => setCurrentView('home')}
+                className={`flex flex-col items-center gap-1 transition-all ${currentView === 'home' ? 'text-cyan-400' : 'text-slate-500'}`}
               >
-                <div className={`p-2 rounded-xl ${currentView === 'play' ? 'bg-cyan-400/10' : ''}`}>
-                  <Play className="w-6 h-6" />
+                <div className={`p-2 rounded-xl ${currentView === 'home' ? 'bg-cyan-400/10' : ''}`}>
+                  <HomeIconLucide className="w-6 h-6" />
                 </div>
-                <span className="text-[9px] font-black uppercase tracking-widest">Play</span>
+                <span className="text-[9px] font-black uppercase tracking-widest">Home</span>
               </button>
+              
+              
+
               
               <button 
                 onClick={() => setCurrentView('rooms')}
@@ -1421,7 +950,7 @@ export default function App() {
               room={room} 
               user={user} 
               setRoom={setRoom}
-              allPlayers={IPL_PLAYERS} 
+              allPlayers={room?.category === 'car' ? CAR_DATA : IPL_PLAYERS} 
               isMuted={isMuted}
               onToggleMute={() => setIsMuted(!isMuted)}
               onQuit={() => setRoom(null)} 
@@ -1432,7 +961,7 @@ export default function App() {
             <ResultsScreen 
               room={room} 
               user={user} 
-              allPlayers={IPL_PLAYERS} 
+              allPlayers={room?.category === 'car' ? CAR_DATA : IPL_PLAYERS} 
               onHome={() => setRoom(null)}
               onShowSupport={() => setShowSupportModal(true)}
             />
@@ -1663,10 +1192,10 @@ export default function App() {
                   <div className="mb-6 group">
                     <span className="text-[10px] font-black text-white/40 uppercase block mb-2 tracking-widest">UPI ID (Tap to Pay)</span>
                     <a 
-                      href="upi://pay?pa=divye.1@superyes&pn=Divye%20Lalwani&cu=INR"
+                      href="upi://pay?pa=divye64@oksbi&pn=Divye%20Lalwani&cu=INR"
                       className="text-2xl font-black text-yellow-400 font-mono tracking-tight bg-yellow-400/10 py-4 px-6 rounded-2xl inline-block border border-yellow-400/20 hover:bg-yellow-400/20 hover:scale-105 active:scale-95 transition-all cursor-pointer"
                     >
-                      divye.1@superyes
+                      divye64@oksbi
                     </a>
                   </div>
 
@@ -1686,7 +1215,7 @@ export default function App() {
                     >
                       <div className="p-4 bg-white rounded-3xl shadow-2xl relative">
                         <img 
-                          src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=upi://pay?pa=divye.1@superyes%26pn=Divye%20Lalwani" 
+                          src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=upi://pay?pa=divye64@oksbi&pn=AuctionPitch&cu=INR" 
                           alt="Support QR Code"
                           className="w-48 h-48 md:w-56 md:h-56"
                         />

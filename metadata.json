@@ -1,5 +1,5 @@
 {
-  "name": "IPL 2026 Auction Pro",
-  "description": "A real-time multiplayer IPL 2026 auction simulator with live bidding, squad management, and intelligent bot play.",
+  "name": "Auction Pitch: Multi-Category Simulator",
+  "description": "A real-time multiplayer auction simulator for IPL 2026 cricket teams, exotic cars, and more. Features live bidding, squad management, and intelligent bot play.",
   "requestFramePermissions": []
 }
