@@ -5,7 +5,3 @@ export const getNextBidAmount = (current: number, base: number) => {
   if (current < 1000) return current + 50;
   return current + 100;
 };
-
-export const generateRoomId = () => {
-  return Math.random().toString(36).substring(2, 8).toUpperCase();
-};

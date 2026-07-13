@@ -105,10 +105,9 @@ service cloud.firestore {
     }
 
     function isValidRoom(data) {
-      return hasOnlyAllowedFields(['roomId', 'category', 'title', 'hostId', 'status', 'currentBidderId', 'currentBidAmount', 'currentPlayerId', 'timerEnd', 'players', 'squads', 'purses', 'auctionedPlayerIds', 'createdAt', 'playersCount', 'revealTimer', 'isPublic', 'skipVotes', 'terminateVotes']) &&
+      return hasOnlyAllowedFields(['roomId', 'title', 'hostId', 'status', 'currentBidderId', 'currentBidAmount', 'currentPlayerId', 'timerEnd', 'players', 'squads', 'purses', 'auctionedPlayerIds', 'createdAt', 'playersCount', 'revealTimer', 'isPublic', 'skipVotes', 'terminateVotes']) &&
              data.roomId is string && data.roomId.size() == 6 &&
              data.hostId is string &&
-             (data.category is string || data.category == null) &&
              data.status in ['waiting', 'active', 'finished'] &&
              data.players is map &&
              data.squads is map &&
