@@ -146,13 +146,12 @@ export const dbService = {
       const q = query(
         collection(db, 'users'),
         orderBy('totalWinnings', 'desc'),
-        limit(1000)
+        limit(50)
       );
       const querySnapshot = await getDocs(q);
       const results = querySnapshot.docs
         .map(doc => doc.data() as UserProfile)
-        .filter(user => user.role !== 'guest')
-        .slice(0, 500);
+        .filter(user => user.role !== 'guest');
         
       cachedLeaderboard = results;
       lastLeaderboardFetch = now;

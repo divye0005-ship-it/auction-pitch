@@ -79,7 +79,7 @@ service cloud.firestore {
     }
 
     function hasOnlyAllowedFields(data, fields) {
-      return data.diff({}).affectedKeys().hasOnly(fields);
+      return data.keys().hasOnly(fields);
     }
 
     // ===============================================================
@@ -106,8 +106,8 @@ service cloud.firestore {
 
     function isValidRoom(data) {
       return hasOnlyAllowedFields(data, ['roomId', 'title', 'hostId', 'status', 'currentBidderId', 'currentBidAmount', 'currentPlayerId', 'timerEnd', 'players', 'squads', 'purses', 'auctionedPlayerIds', 'createdAt', 'playersCount', 'revealTimer', 'isPublic', 'skipVotes', 'terminateVotes']) &&
-             data.roomId is string && data.roomId.size() == 6 &&
-             data.hostId is string &&
+             data.roomId is string && data.roomId.size() >= 4 && data.roomId.size() <= 8 &&
+             data.hostId == request.auth.uid &&
              data.status in ['waiting', 'active', 'finished'] &&
              data.players is map &&
              data.squads is map &&
@@ -133,10 +133,22 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isValidUser(request.resource.data);
       allow update: if isAuthenticated() && (
-        isOwner(userId) || 
         isAdmin() ||
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['totalWinnings']) && 
-         request.resource.data.totalWinnings is number)
+        (
+          isOwner(userId) && 
+          request.resource.data.role == resource.data.role && 
+          request.resource.data.uid == resource.data.uid &&
+          (
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['totalWinnings']) ||
+            (request.resource.data.totalWinnings is number && request.resource.data.totalWinnings <= resource.data.totalWinnings + 50000)
+          )
+        ) ||
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['totalWinnings']) &&
+          request.resource.data.totalWinnings is number &&
+          request.resource.data.totalWinnings > resource.data.totalWinnings &&
+          request.resource.data.totalWinnings <= resource.data.totalWinnings + 50000
+        )
       );
     }
 

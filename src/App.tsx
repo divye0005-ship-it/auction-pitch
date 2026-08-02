@@ -1663,10 +1663,10 @@ export default function App() {
                   <div className="mb-6 group">
                     <span className="text-[10px] font-black text-white/40 uppercase block mb-2 tracking-widest">UPI ID (Tap to Pay)</span>
                     <a 
-                      href="upi://pay?pa=divye.1@superyes&pn=Divye%20Lalwani&cu=INR"
+                      href="upi://pay?pa=divye64@oksbi&pn=Divye%20Lalwani&cu=INR"
                       className="text-2xl font-black text-yellow-400 font-mono tracking-tight bg-yellow-400/10 py-4 px-6 rounded-2xl inline-block border border-yellow-400/20 hover:bg-yellow-400/20 hover:scale-105 active:scale-95 transition-all cursor-pointer"
                     >
-                      divye.1@superyes
+                      divye64@oksbi
                     </a>
                   </div>
 
@@ -1686,7 +1686,7 @@ export default function App() {
                     >
                       <div className="p-4 bg-white rounded-3xl shadow-2xl relative">
                         <img 
-                          src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=upi://pay?pa=divye.1@superyes%26pn=Divye%20Lalwani" 
+                          src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=upi://pay?pa=divye64@oksbi%26pn=Divye%20Lalwani" 
                           alt="Support QR Code"
                           className="w-48 h-48 md:w-56 md:h-56"
                         />
