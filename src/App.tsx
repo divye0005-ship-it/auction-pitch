@@ -11,6 +11,7 @@ import ResultsScreen from './components/ResultsScreen';
 import ChatPanel from './components/ChatPanel';
 import Leaderboard from './components/Leaderboard';
 import { Trophy, Plus, Users, LogIn, LogOut, Sun, Moon, Mail, ChevronRight, Play, LayoutDashboard, User as UserIcon, ArrowLeft, Award, Volume2, VolumeX, Zap, MessageSquare, Shield, Sparkles, Star, BookOpen, Info, HelpCircle, CheckCircle2, AlertCircle, Instagram, Send, Trash2, ExternalLink, Wallet, TrendingUp, ShieldCheck, X, Share2, Copy, Check } from 'lucide-react';
+import { Analytics } from '@vercel/analytics/react';
 
 
 
@@ -1710,6 +1711,7 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+      <Analytics />
     </div>
   );
 }
