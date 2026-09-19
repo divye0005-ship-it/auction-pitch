@@ -259,8 +259,12 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
     }
   };
 
+  const isBiddingRef = React.useRef(false);
+
   const handleBid = async () => {
-    if (!currentPlayer || currentBidderId === user.uid) return;
+    if (!currentPlayer || currentBidderId === user.uid || isBiddingRef.current) return;
+    isBiddingRef.current = true;
+    setTimeout(() => { isBiddingRef.current = false; }, 400);
     
     const mySquad = room.squads[user.uid] || [];
     if (mySquad.length >= 25) {
@@ -329,6 +333,11 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
   const currentBidderIdRef = React.useRef(currentBidderId);
   const roomPursesRef = React.useRef(room.purses);
   const roomSquadsRef = React.useRef(room.squads);
+  const botPlayersRef = React.useRef<any[]>([]);
+
+  useEffect(() => {
+    botPlayersRef.current = playersArr.filter(p => p.isBot);
+  }, [playersArr]);
 
   useEffect(() => {
     timeLeftRef.current = timeLeft;
@@ -338,99 +347,95 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
     roomSquadsRef.current = room.squads;
   }, [timeLeft, currentBid, currentBidderId, room.purses, room.squads]);
 
-  // Bot Logic
+  // Bot Logic: Optimized to pick single best bot per tick, avoiding concurrent transaction contention
   useEffect(() => {
-    const botPlayers = playersArr.filter(p => p.isBot);
-    if (botPlayers.length > 0 && room.hostId === user.uid && room.status === 'active' && currentPlayer) {
+    if (room.hostId === user.uid && room.status === 'active' && currentPlayer) {
       const botInterval = setInterval(() => {
-        botPlayers.forEach(bot => {
-          const tLeft = timeLeftRef.current;
-          const cBid = currentBidRef.current;
-          const cBidderId = currentBidderIdRef.current;
-          
+        const botPlayers = botPlayersRef.current;
+        if (!botPlayers || botPlayers.length === 0) return;
+
+        const tLeft = timeLeftRef.current;
+        const cBid = currentBidRef.current;
+        const cBidderId = currentBidderIdRef.current;
+
+        // Candidate selection: Find the bot with the highest bidding motivation
+        let bestCandidate: { bot: any; nextBid: number; probability: number; delay: number } | null = null;
+
+        for (const bot of botPlayers) {
           const botPurse = roomPursesRef.current[bot.uid] || 0;
           const botSquad = roomSquadsRef.current[bot.uid] || [];
           
-          // Bot Personalities based on UID hash
-          const botHash = bot.uid.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+          const botHash = bot.uid.split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0);
           const isAggressive = botHash % 3 === 0;
           const isConservative = botHash % 3 === 1;
           
-          // Valuation logic: More selective
-          // Base valuation on score and role
           let valuationMultiplier = 15;
           if (currentPlayer.auctionScore > 90) valuationMultiplier = isAggressive ? 50 : 40;
           else if (currentPlayer.auctionScore > 80) valuationMultiplier = isAggressive ? 35 : 25;
           else if (currentPlayer.auctionScore > 70) valuationMultiplier = isAggressive ? 22 : 18;
           else valuationMultiplier = isAggressive ? 14 : 10;
 
-          // Budget Management: Calculate average remaining budget
-          const playersNeeded = 18 - botSquad.length; // Target squad of 18
+          const playersNeeded = 18 - botSquad.length;
           const avgBudgetPerPlayer = playersNeeded > 0 ? botPurse / playersNeeded : 0;
-          
-          // If the bid is way above average budget and player isn't a star, be cautious
           if (cBid > avgBudgetPerPlayer * 1.5 && currentPlayer.auctionScore < 85) {
             valuationMultiplier *= 0.6;
           }
 
-          // Role-based valuation (bots prioritize what they need)
-          const squadRoles = botSquad.map(id => playerMap.get(id)?.role).filter(Boolean);
-          const roleCount = squadRoles.filter(r => r === currentPlayer.role).length;
-          
-          // Bots prioritize roles they are missing
+          const squadRoles = botSquad.map((id: string) => playerMap.get(id)?.role).filter(Boolean);
+          const roleCount = squadRoles.filter((r: any) => r === currentPlayer.role).length;
           if (roleCount === 0) valuationMultiplier *= 1.4; 
           else if (roleCount >= 4) valuationMultiplier *= 0.4;
           else if (roleCount >= 2) valuationMultiplier *= 0.7;
-          
-          // Conservative bots bid less
+
           if (isConservative) valuationMultiplier *= 0.65;
 
           const valuation = Math.max(currentPlayer.basePrice * 1.5, currentPlayer.auctionScore * valuationMultiplier);
-          
-          // Bots become extremely aggressive as time runs out or if they have few players
           const squadUrgency = botSquad.length < 5 ? 0.98 : botSquad.length < 11 ? 0.8 : 0.4;
           const timeUrgency = tLeft <= 2 ? 0.99 : tLeft <= 5 ? 0.85 : squadUrgency;
           
-          // Only bid if not already the highest bidder and within valuation
           const nextBid = getNextBidAmount(cBid, currentPlayer.basePrice);
-          const maxBidLimit = currentPlayer.auctionScore > 950 ? 3000 : 500; // 30 Crores for score > 950, else 5 Crores limit
+          const maxBidLimit = currentPlayer.auctionScore > 950 ? 3000 : 500;
 
           if (botSquad.length < 25 && cBidderId !== bot.uid && cBid < valuation && nextBid <= maxBidLimit && botPurse > cBid + 50) {
-            // Higher probability of bidding if valuation is much higher than current bid
             const valuationGap = (valuation - cBid) / valuation;
             let bidProbability = Math.max(timeUrgency * 0.4, valuationGap * 0.8);
-            
-            // Bots don't bid every single time, they "wait and watch"
-            // Optimization: Stagger bot bids based on their UID to avoid batch processing spikes
-            const botDelay = (botHash % 10) * 80;
-            
             if (Math.random() > 0.6) bidProbability *= 0.4;
 
-            if (Math.random() < bidProbability) { 
-              const timerId = setTimeout(() => {
-                // Check refs AGAIN in timeout to avoid racing bids or bidding on expired player
-                if (
-                  roomPursesRef.current[bot.uid] >= nextBid && 
-                  currentBidRef.current === cBid && 
-                  currentPlayerIdRef.current === currentPlayer.playerId &&
-                  !isEndingRef.current
-                ) {
-                  dbService.bidOnPlayer(room.roomId, bot.uid, nextBid, room.revealTimer, currentPlayer.basePrice)
-                    .catch(err => console.log("Bot bid failed:", err.message));
-                }
-              }, botDelay);
-              botTimeoutsRef.current.push(timerId);
+            if (!bestCandidate || bidProbability > bestCandidate.probability) {
+              bestCandidate = {
+                bot,
+                nextBid,
+                probability: bidProbability,
+                delay: (botHash % 6) * 100
+              };
             }
           }
-        });
-      }, 1200); // Slower check to reduce DB writes
+        }
+
+        if (bestCandidate && Math.random() < bestCandidate.probability) {
+          const { bot, nextBid, delay } = bestCandidate;
+          const timerId = setTimeout(() => {
+            if (
+              roomPursesRef.current[bot.uid] >= nextBid && 
+              currentBidRef.current === cBid && 
+              currentPlayerIdRef.current === currentPlayer.playerId &&
+              !isEndingRef.current
+            ) {
+              dbService.bidOnPlayer(room.roomId, bot.uid, nextBid, room.revealTimer, currentPlayer.basePrice)
+                .catch(err => console.log("Bot bid failed:", err.message));
+            }
+          }, delay);
+          botTimeoutsRef.current.push(timerId);
+        }
+      }, 1400); // 1.4s throttle to save Firestore quota
+
       return () => {
         clearInterval(botInterval);
         botTimeoutsRef.current.forEach(t => clearTimeout(t));
         botTimeoutsRef.current = [];
       };
     }
-  }, [room.hostId, user.uid, currentPlayer, playersArr, room.revealTimer, room.roomId, room.status, allPlayers]);
+  }, [room.hostId, user.uid, currentPlayer?.playerId, room.revealTimer, room.roomId, room.status]);
 
   const timerPercentage = (timeLeft / room.revealTimer) * 100;
 

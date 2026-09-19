@@ -19,22 +19,34 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ roomId, userId, userName }) => {
   const [previewMessage, setPreviewMessage] = useState<Message | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  const isOpenRef = useRef(isOpen);
+  isOpenRef.current = isOpen;
+
+  const userIdRef = useRef(userId);
+  userIdRef.current = userId;
+
+  const prevCountRef = useRef(0);
+
   useEffect(() => {
+    prevCountRef.current = 0;
     const unsubscribe = dbService.subscribeToMessages(roomId, (msgs) => {
       const lastMsg = msgs[msgs.length - 1];
       
-      // Only show preview and count if it's a new message and not from current user
-      if (msgs.length > messages.length && lastMsg && lastMsg.userId !== userId) {
-        if (!isOpen) {
+      // Only show preview and count if it's a new incoming message and not from current user
+      if (msgs.length > prevCountRef.current && lastMsg && lastMsg.userId !== userIdRef.current) {
+        if (!isOpenRef.current) {
           setUnreadCount(prev => prev + 1);
           setPreviewMessage(lastMsg);
           setTimeout(() => setPreviewMessage(null), 2000);
         }
       }
+      prevCountRef.current = msgs.length;
       setMessages(msgs);
     });
-    return () => unsubscribe();
-  }, [roomId, isOpen, messages.length, userId]);
+    return () => {
+      unsubscribe();
+    };
+  }, [roomId]);
 
   useEffect(() => {
     if (scrollRef.current) {

@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged, signInAnonymously } from './firebase';
-import { collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, getDocs, onSnapshot, limit } from 'firebase/firestore';
 import { dbService } from './services/dbService';
 import { IPL_PLAYERS } from './services/playerData';
 import { UserProfile, Room, Player } from './types';
@@ -208,7 +208,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!user || room) {
+    if (!user?.uid || room) {
       setResumableRoom(null);
       setLatestPublicRoom(null);
       return;
@@ -223,9 +223,6 @@ export default function App() {
           if (roomData && ['waiting', 'active'].includes(roomData.status)) {
             if (roomData.players && roomData.players[user.uid]) {
               setResumableRoom(roomData);
-              // Fetch just 1 recent public room visually as fallback
-              const pubRooms = await dbService.getPublicRooms();
-              if (pubRooms.length > 0) setLatestPublicRoom(pubRooms[0]);
               return;
             }
           } else {
@@ -233,8 +230,7 @@ export default function App() {
           }
         }
         
-        // SLOW PATH: if not found, we don't scan all DB rooms because it exhausts quota.
-        // Instead, just show them the latest public room.
+        // Visual fallback: only fetch 1 public room if no resumable room exists
         const pubRooms = await dbService.getPublicRooms();
         if (pubRooms.length > 0) {
           setLatestPublicRoom(pubRooms[0]);
@@ -247,40 +243,44 @@ export default function App() {
     };
 
     fetchRoomsInfo();
-  }, [user?.uid, room?.roomId, room?.status]);
+  }, [user?.uid, room?.roomId]);
 
   useEffect(() => {
     if (room?.roomId && ['waiting', 'active'].includes(room.status)) {
       localStorage.setItem('activeRoomId', room.roomId);
-    } else if (!room || !['waiting', 'active'].includes(room.status)) {
-      // Don't remove immediately on finished so ResultsScreen can show, 
-      // but on next load they won't resume a finished room anyway
     }
   }, [room?.roomId, room?.status]);
 
   useEffect(() => {
     if (room?.roomId) {
       const unsubscribe = dbService.subscribeToRoom(room.roomId, (updatedRoom) => {
-        setRoom(updatedRoom);
+        if (updatedRoom) {
+          setRoom(updatedRoom);
+        }
       });
-      return () => unsubscribe();
+      return () => {
+        unsubscribe();
+      };
     }
   }, [room?.roomId]);
 
   const fetchPublicRooms = async () => {
-    if (user) {
+    if (user?.uid) {
       const rooms = await dbService.getPublicRooms();
       setPublicRooms(rooms);
     }
   };
 
+  // Only query public rooms when the user opens the rooms directory view
   useEffect(() => {
-    fetchPublicRooms();
-  }, [user]);
+    if (user?.uid && currentView === 'rooms') {
+      fetchPublicRooms();
+    }
+  }, [user?.uid, currentView]);
 
   useEffect(() => {
     const updateRank = async () => {
-      if (!user) return;
+      if (!user?.uid) return;
       try {
         const rank = await dbService.getUserRank(user.uid, user.totalWinnings || 0);
         if (rank !== null) {
@@ -291,16 +291,20 @@ export default function App() {
       }
     };
     updateRank();
-  }, [user?.totalWinnings]);
+  }, [user?.uid, user?.totalWinnings]);
 
+  const cleanedUpUserRoomsRef = useRef<string | null>(null);
   useEffect(() => {
+    if (!user?.uid || cleanedUpUserRoomsRef.current === user.uid) return;
+    cleanedUpUserRoomsRef.current = user.uid;
+
     const cleanupStaleRooms = async () => {
-      if (!user) return;
       try {
         const querySnapshot = await getDocs(query(
           collection(db, 'rooms'),
           where('status', '==', 'active'),
-          where('hostId', '==', user.uid)
+          where('hostId', '==', user.uid),
+          limit(5)
         ));
         
         const now = Date.now();
@@ -309,9 +313,6 @@ export default function App() {
           const players = Object.values(roomData.players);
           const hasRealPlayer = players.some(p => !p.isBot);
           
-          // Terminate if:
-          // 1. It has real players but has been active for more than 1 hour (stale)
-          // 2. It has NO real players AND it's NOT a public bot-only auction (we want some bot auctions to persist)
           const isStale = roomData.createdAt && now - roomData.createdAt.toMillis() > 1 * 60 * 60 * 1000;
           const isBotOnly = !hasRealPlayer;
           
@@ -324,10 +325,8 @@ export default function App() {
       }
     };
 
-    if (user) {
-      cleanupStaleRooms();
-    }
-  }, [user]);
+    cleanupStaleRooms();
+  }, [user?.uid]);
 
   // Removed global seedAndCleanup that costs 200 read quotas per session.
 
@@ -848,7 +847,11 @@ export default function App() {
 
           <div className="flex-1 pb-24 md:pb-0">
             {currentView === 'leaderboard' ? (
-              <Leaderboard onBack={() => setCurrentView('play')} />
+              <Leaderboard 
+                onBack={() => setCurrentView('play')} 
+                currentUser={user}
+                currentUserRank={userRank}
+              />
             ) : currentView === 'profile' ? (
               <div className="flex-1 flex flex-col items-center justify-center py-12">
                 <div className="w-full max-w-2xl bento-item glass-dark relative overflow-hidden">
