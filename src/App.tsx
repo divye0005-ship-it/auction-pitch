@@ -10,9 +10,12 @@ import AuctionGameplay from './components/AuctionGameplay';
 import ResultsScreen from './components/ResultsScreen';
 import ChatPanel from './components/ChatPanel';
 import Leaderboard from './components/Leaderboard';
-import { Trophy, Plus, Users, LogIn, LogOut, Sun, Moon, Mail, ChevronRight, Play, LayoutDashboard, User as UserIcon, ArrowLeft, Award, Volume2, VolumeX, Zap, MessageSquare, Shield, Sparkles, Star, BookOpen, Info, HelpCircle, CheckCircle2, AlertCircle, Instagram, Send, Trash2, ExternalLink, Wallet, TrendingUp, ShieldCheck, X, Share2, Copy, Check } from 'lucide-react';
-
-
+import { Trophy, Plus, Users, LogIn, LogOut, Sun, Moon, Mail, ChevronRight, Play, LayoutDashboard, User as UserIcon, ArrowLeft, Award, Volume2, VolumeX, Zap, MessageSquare, Shield, Sparkles, Star, BookOpen, Info, HelpCircle, CheckCircle2, AlertCircle, Instagram, Send, Trash2, ExternalLink, Wallet, TrendingUp, ShieldCheck, X, Share2, Copy, Check, Heart, Coffee } from 'lucide-react';
+import HowIplMegaAuctionWorks from './pages/HowIplMegaAuctionWorks';
+import IplAuctionRulesGuide from './pages/IplAuctionRulesGuide';
+import IplAuctionGameFriends from './pages/IplAuctionGameFriends';
+import CricketManagerGameOnline from './pages/CricketManagerGameOnline';
+import AboutCreator from './pages/AboutCreator';
 
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -32,6 +35,9 @@ export default function App() {
   const [showSupportModal, setShowSupportModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copiedUpi, setCopiedUpi] = useState(false);
+  const [selectedTipAmount, setSelectedTipAmount] = useState<number>(50);
+  const [activeGuide, setActiveGuide] = useState<string | null>(null);
 
   const copyToClipboard = async () => {
     try {
@@ -40,6 +46,16 @@ export default function App() {
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       console.error('Failed to copy!', err);
+    }
+  };
+
+  const copyUpiId = async () => {
+    try {
+      await navigator.clipboard.writeText('divye64@oksbi');
+      setCopiedUpi(true);
+      setTimeout(() => setCopiedUpi(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy UPI ID', err);
     }
   };
 
@@ -231,7 +247,7 @@ export default function App() {
     };
 
     fetchRoomsInfo();
-  }, [user, room]);
+  }, [user?.uid, room?.roomId, room?.status]);
 
   useEffect(() => {
     if (room?.roomId && ['waiting', 'active'].includes(room.status)) {
@@ -761,6 +777,17 @@ export default function App() {
 
             <div className="flex items-center gap-4">
               <button 
+                onClick={() => {
+                  setSelectedTipAmount(50);
+                  setShowSupportModal(true);
+                }}
+                className="flex items-center gap-2 px-5 py-3.5 rounded-2xl bg-gradient-to-r from-amber-500/20 via-yellow-500/20 to-orange-500/20 border border-yellow-500/40 text-yellow-400 hover:from-amber-500/30 hover:to-yellow-500/30 hover:scale-105 active:scale-95 transition-all font-black text-xs uppercase tracking-wider shadow-[0_0_20px_rgba(234,179,8,0.2)]"
+                title="Support & Donate"
+              >
+                <Heart className="w-4 h-4 fill-yellow-400 text-yellow-400 animate-pulse" />
+                <span>Support / Donate</span>
+              </button>
+              <button 
                 onClick={() => setShowShareModal(true)}
                 className="p-4 rounded-2xl glass text-cyan-400 hover:bg-cyan-500/10 transition-all"
                 title="Share"
@@ -785,8 +812,19 @@ export default function App() {
 
           {/* Mobile Header */}
           <div className="md:hidden flex items-center justify-between mt-6 mb-12">
-            <h1 className="text-3xl font-black uppercase tracking-tighter font-display text-cyan-400">Auction Pitch Simulator</h1>
-            <div className="flex items-center gap-3">
+            <h1 className="text-2xl sm:text-3xl font-black uppercase tracking-tighter font-display text-cyan-400">Auction Pitch</h1>
+            <div className="flex items-center gap-2 sm:gap-3">
+              <button 
+                onClick={() => {
+                  setSelectedTipAmount(50);
+                  setShowSupportModal(true);
+                }}
+                className="p-3 rounded-xl bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-yellow-500/40 text-yellow-400 flex items-center gap-1.5 text-xs font-black"
+                title="Support & Donate"
+              >
+                <Heart className="w-4 h-4 fill-yellow-400 text-yellow-400 animate-pulse" />
+                <span className="hidden sm:inline">Donate</span>
+              </button>
               <button 
                 onClick={() => setShowShareModal(true)}
                 className="p-3 rounded-xl glass text-cyan-400"
@@ -996,6 +1034,30 @@ export default function App() {
                         <div className="text-5xl font-black font-display text-purple-400">#{userRank || '--'}</div>
                         <span className="text-[9px] font-bold text-purple-500/50 uppercase mt-2">Global Standing</span>
                       </div>
+                    </div>
+
+                    {/* Supporter Badge & Donate Card */}
+                    <div className="w-full mt-6 p-6 rounded-3xl bg-gradient-to-r from-amber-500/10 via-yellow-500/10 to-orange-500/10 border border-yellow-500/30 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-2xl bg-yellow-400/20 border border-yellow-400/30 flex items-center justify-center flex-shrink-0">
+                          <Heart className="w-6 h-6 text-yellow-400 fill-yellow-400 animate-pulse" />
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-black text-yellow-400 uppercase tracking-widest block">VIP Community Supporter</span>
+                          <h4 className="text-sm font-black text-white uppercase tracking-tight">Support Server & Dev Costs</h4>
+                          <p className="text-xs text-slate-400">Keep Auction Pitch 100% free and lightning-fast with a small UPI tip!</p>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          setSelectedTipAmount(50);
+                          setShowSupportModal(true);
+                        }}
+                        className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-gradient-to-r from-yellow-400 to-amber-400 text-black font-black uppercase text-xs tracking-widest hover:scale-105 active:scale-95 transition-all shadow-[0_0_20px_rgba(245,158,11,0.25)] flex items-center justify-center gap-2 flex-shrink-0"
+                      >
+                        <Wallet className="w-4 h-4" />
+                        Tip / Donate
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1310,6 +1372,131 @@ export default function App() {
                     </button>
                   </div>
                 </div>
+
+                {/* Support & Server Fuel Banner */}
+                <div className="md:col-span-12 bento-item bg-gradient-to-r from-amber-500/10 via-yellow-500/10 to-orange-500/10 border-yellow-500/30 relative overflow-hidden group">
+                  <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
+                    <div className="flex items-center gap-5 text-left">
+                      <div className="w-16 h-16 rounded-2xl bg-yellow-400/20 border border-yellow-400/40 flex items-center justify-center flex-shrink-0">
+                        <Heart className="w-8 h-8 text-yellow-400 fill-yellow-400 animate-pulse" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[10px] font-black text-yellow-400 uppercase tracking-[0.25em]">Fuel High-Speed Servers</span>
+                          <span className="px-2 py-0.5 rounded-full bg-yellow-400/20 text-[9px] font-black text-yellow-300">100% Free App</span>
+                        </div>
+                        <h3 className="text-xl sm:text-2xl font-black uppercase text-white tracking-tight">Support Developer (Divye Lalwani)</h3>
+                        <p className="text-slate-400 text-xs font-bold max-w-xl">
+                          Auction Pitch is completely free with no intrusive ads. Tip a Chai or Coffee via UPI to keep servers fast for 20,000+ cricket fans!
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Quick Tip Amounts */}
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full lg:w-auto justify-center lg:justify-end">
+                      {[
+                        { label: '₹20 Chai', amount: 20 },
+                        { label: '₹50 Coffee', amount: 50 },
+                        { label: '₹100 Fan', amount: 100 },
+                        { label: '₹250 Owner', amount: 250 },
+                      ].map((item) => (
+                        <button
+                          key={item.amount}
+                          onClick={() => {
+                            setSelectedTipAmount(item.amount);
+                            setShowSupportModal(true);
+                          }}
+                          className="px-4 py-2.5 rounded-xl bg-white/5 border border-yellow-400/30 hover:border-yellow-400 hover:bg-yellow-400/20 text-yellow-400 font-black text-xs uppercase tracking-wider transition-all hover:scale-105 active:scale-95"
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => {
+                          setSelectedTipAmount(50);
+                          setShowSupportModal(true);
+                        }}
+                        className="px-6 py-3 rounded-xl bg-gradient-to-r from-yellow-400 to-amber-400 text-black font-black text-xs uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-[0_0_20px_rgba(245,158,11,0.3)] flex items-center gap-2"
+                      >
+                        <Wallet className="w-4 h-4" />
+                        Donate UPI
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* IPL Auction Knowledge & Guides Hub */}
+                <div className="md:col-span-12 bento-item glass-dark text-left">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+                    <div>
+                      <span className="text-[10px] font-black text-cyan-400 uppercase tracking-[0.25em] block mb-1">Cricket Knowledge & SEO Guides</span>
+                      <h3 className="text-2xl font-black uppercase text-white tracking-tight font-display">IPL Auction Strategy & Hub</h3>
+                    </div>
+                    <span className="text-xs text-slate-400 font-bold">Master the Mega Auction</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <button
+                      onClick={() => setActiveGuide('how-it-works')}
+                      className="p-5 rounded-2xl bg-white/5 border border-white/10 hover:border-cyan-400/40 hover:bg-cyan-500/5 transition-all text-left group"
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-cyan-400/10 flex items-center justify-center text-cyan-400 mb-3 group-hover:scale-110 transition-transform">
+                        <BookOpen className="w-5 h-5" />
+                      </div>
+                      <h4 className="text-sm font-black text-white uppercase tracking-tight mb-1 group-hover:text-cyan-400 transition-colors">How IPL Mega Auction Works</h4>
+                      <p className="text-xs text-slate-400 line-clamp-2">Complete breakdown of marquee sets, bidding dynamics, RTM cards, and team purse management.</p>
+                      <span className="text-[10px] font-black text-cyan-400 uppercase tracking-wider mt-3 inline-flex items-center gap-1">Read Guide <ChevronRight className="w-3 h-3" /></span>
+                    </button>
+
+                    <button
+                      onClick={() => setActiveGuide('rules')}
+                      className="p-5 rounded-2xl bg-white/5 border border-white/10 hover:border-yellow-400/40 hover:bg-yellow-500/5 transition-all text-left group"
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-yellow-400/10 flex items-center justify-center text-yellow-400 mb-3 group-hover:scale-110 transition-transform">
+                        <Shield className="w-5 h-5" />
+                      </div>
+                      <h4 className="text-sm font-black text-white uppercase tracking-tight mb-1 group-hover:text-yellow-400 transition-colors">IPL Auction Rules & Budget Guide</h4>
+                      <p className="text-xs text-slate-400 line-clamp-2">Understand the ₹120 Crore salary cap, minimum squad limits (18-25), and overseas player restrictions.</p>
+                      <span className="text-[10px] font-black text-yellow-400 uppercase tracking-wider mt-3 inline-flex items-center gap-1">Read Rules <ChevronRight className="w-3 h-3" /></span>
+                    </button>
+
+                    <button
+                      onClick={() => setActiveGuide('friends')}
+                      className="p-5 rounded-2xl bg-white/5 border border-white/10 hover:border-purple-400/40 hover:bg-purple-500/5 transition-all text-left group"
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-purple-400/10 flex items-center justify-center text-purple-400 mb-3 group-hover:scale-110 transition-transform">
+                        <Users className="w-5 h-5" />
+                      </div>
+                      <h4 className="text-sm font-black text-white uppercase tracking-tight mb-1 group-hover:text-purple-400 transition-colors">Play Auction With Friends</h4>
+                      <p className="text-xs text-slate-400 line-clamp-2">How to host private rooms, invite friends with 6-letter room codes, and run mock battles.</p>
+                      <span className="text-[10px] font-black text-purple-400 uppercase tracking-wider mt-3 inline-flex items-center gap-1">Host Guide <ChevronRight className="w-3 h-3" /></span>
+                    </button>
+
+                    <button
+                      onClick={() => setActiveGuide('strategy')}
+                      className="p-5 rounded-2xl bg-white/5 border border-white/10 hover:border-green-400/40 hover:bg-green-500/5 transition-all text-left group"
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-green-400/10 flex items-center justify-center text-green-400 mb-3 group-hover:scale-110 transition-transform">
+                        <TrendingUp className="w-5 h-5" />
+                      </div>
+                      <h4 className="text-sm font-black text-white uppercase tracking-tight mb-1 group-hover:text-green-400 transition-colors">Cricket Manager Strategies</h4>
+                      <p className="text-xs text-slate-400 line-clamp-2">Pro bidding strategies: star inflation, bankroll preservation, and winning under-the-radar buys.</p>
+                      <span className="text-[10px] font-black text-green-400 uppercase tracking-wider mt-3 inline-flex items-center gap-1">Pro Tips <ChevronRight className="w-3 h-3" /></span>
+                    </button>
+
+                    <button
+                      onClick={() => setActiveGuide('about')}
+                      className="p-5 rounded-2xl bg-white/5 border border-white/10 hover:border-orange-400/40 hover:bg-orange-500/5 transition-all text-left group sm:col-span-2 lg:col-span-2"
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-orange-400/10 flex items-center justify-center text-orange-400 mb-3 group-hover:scale-110 transition-transform">
+                        <UserIcon className="w-5 h-5" />
+                      </div>
+                      <h4 className="text-sm font-black text-white uppercase tracking-tight mb-1 group-hover:text-orange-400 transition-colors">About the Creator: Divye Lalwani</h4>
+                      <p className="text-xs text-slate-400">Created by Divye Lalwani, an independent builder and cricket fan from New Delhi. Built with React & Firebase for cricket fans worldwide.</p>
+                      <span className="text-[10px] font-black text-orange-400 uppercase tracking-wider mt-3 inline-flex items-center gap-1">Learn More <ChevronRight className="w-3 h-3" /></span>
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -1592,118 +1779,233 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Support & Beta Modal */}
+      {/* Interactive SEO & Knowledge Guide Reader Modal */}
+      <AnimatePresence>
+        {activeGuide && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[160] flex items-center justify-center p-2 sm:p-6 bg-black/90 backdrop-blur-2xl overflow-y-auto"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, y: 30, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.95, y: 30, opacity: 0 }}
+              className="w-full max-w-4xl max-h-[90vh] glass-dark rounded-[2.5rem] border border-cyan-500/30 overflow-hidden flex flex-col shadow-2xl relative my-auto"
+            >
+              {/* Modal Header */}
+              <div className="p-6 border-b border-white/10 flex items-center justify-between bg-black/40 backdrop-blur-md sticky top-0 z-20">
+                <button 
+                  onClick={() => setActiveGuide(null)}
+                  className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-cyan-400 hover:text-white transition-colors"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Back to Auction Game
+                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => {
+                      setActiveGuide(null);
+                      setSelectedTipAmount(50);
+                      setShowSupportModal(true);
+                    }}
+                    className="hidden sm:flex items-center gap-1.5 px-4 py-2 rounded-xl bg-yellow-400/10 border border-yellow-400/30 text-yellow-400 text-xs font-black uppercase"
+                  >
+                    <Heart className="w-3.5 h-3.5 fill-yellow-400" />
+                    Support
+                  </button>
+                  <button 
+                    onClick={() => setActiveGuide(null)}
+                    className="p-2.5 rounded-full bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-all"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
 
+              {/* Guide Content Scroll Area */}
+              <div className="p-6 sm:p-10 overflow-y-auto flex-1">
+                {activeGuide === 'how-it-works' && <HowIplMegaAuctionWorks />}
+                {activeGuide === 'rules' && <IplAuctionRulesGuide />}
+                {activeGuide === 'friends' && <IplAuctionGameFriends />}
+                {activeGuide === 'strategy' && <CricketManagerGameOnline />}
+                {activeGuide === 'about' && <AboutCreator />}
+              </div>
 
+              {/* Modal Footer */}
+              <div className="p-6 border-t border-white/10 bg-black/50 backdrop-blur-md flex flex-col sm:flex-row items-center justify-between gap-4">
+                <span className="text-xs text-slate-400 font-bold">Ready to build your dream IPL squad?</span>
+                <button
+                  onClick={() => setActiveGuide(null)}
+                  className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-500 text-black font-black uppercase text-xs tracking-widest hover:scale-105 active:scale-95 transition-all shadow-[0_0_20px_rgba(34,211,238,0.3)] flex items-center justify-center gap-2"
+                >
+                  <Play className="w-4 h-4 fill-current" />
+                  Start Playing Auction Now
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Support & Donation Modal */}
       <AnimatePresence>
         {showSupportModal && (
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-black/90 backdrop-blur-xl"
+            className="fixed inset-0 z-[150] flex items-center justify-center p-4 sm:p-6 bg-black/90 backdrop-blur-xl overflow-y-auto"
           >
             <motion.div 
               initial={{ scale: 0.9, y: 50, opacity: 0 }}
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.9, y: 50, opacity: 0 }}
-              className="w-full max-w-md glass-dark p-8 md:p-10 rounded-[3.5rem] border border-cyan-500/20 relative overflow-hidden"
+              className="w-full max-w-lg glass-dark p-6 sm:p-10 rounded-[3rem] border border-yellow-500/30 relative overflow-hidden shadow-2xl my-auto"
             >
               <button 
                 onClick={() => {
                   setShowSupportModal(false);
                   setShowQR(false);
                 }}
-                className="absolute top-6 right-6 p-4 rounded-full bg-black/80 hover:bg-black transition-all text-white border border-white/20 z-[10] shadow-2xl"
+                className="absolute top-6 right-6 p-3 rounded-full bg-black/80 hover:bg-black transition-all text-white border border-white/20 z-[10] shadow-2xl"
               >
                 <X className="w-5 h-5" />
               </button>
 
               <div className="text-center">
-                <div className="inline-flex items-center gap-2 mb-6 px-4 py-2 rounded-full bg-cyan-500/10 border border-cyan-500/20">
-                  <TrendingUp className="w-4 h-4 text-cyan-400" />
-                  <span className="text-[10px] font-black text-cyan-400 uppercase tracking-[0.2em]">Game Feedback</span>
+                <div className="inline-flex items-center gap-2 mb-4 px-4 py-1.5 rounded-full bg-yellow-400/10 border border-yellow-400/30">
+                  <Heart className="w-4 h-4 text-yellow-400 fill-yellow-400 animate-pulse" />
+                  <span className="text-[10px] font-black text-yellow-400 uppercase tracking-[0.2em]">Support The Creator</span>
                 </div>
 
-                <h2 className="text-4xl font-black uppercase text-white mb-4 italic font-display leading-tight">
-                  WE ARE IN <br />
-                  <span className="text-cyan-400">BETA NOW!</span>
+                <h2 className="text-3xl sm:text-4xl font-black uppercase text-white mb-2 italic font-display leading-tight">
+                  SUPPORT <br />
+                  <span className="text-yellow-400">AUCTION PITCH</span>
                 </h2>
 
-                <p className="text-slate-400 font-bold text-sm mb-10 leading-relaxed">
-                  Please help us improve this game by giving your small feedback to us. Every suggestion counts in our mission!
+                <p className="text-slate-400 font-bold text-xs sm:text-sm mb-6 leading-relaxed">
+                  Auction Pitch is built by <strong className="text-white">Divye Lalwani</strong> as a free simulator for cricket lovers. Donations keep our Firestore database & servers fast for 20,000+ players!
                 </p>
 
-                <div className="space-y-4 mb-10">
-                  <a 
-                    href="mailto:divye0005@gmail.com"
-                    className="w-full py-4 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center gap-3 text-xs font-black uppercase tracking-widest text-white hover:bg-white/10 transition-all"
-                  >
-                    <Star className="w-4 h-4 text-cyan-400" />
-                    divye0005@gmail.com
-                  </a>
-
-                  <a 
-                    href="https://t.me/auctionpitch"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full py-4 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center gap-3 text-xs font-black uppercase tracking-widest text-blue-400 hover:bg-blue-500/20 transition-all"
-                  >
-                    <Send className="w-4 h-4" />
-                    Feedback Group
-                  </a>
+                {/* Amount Selector */}
+                <div className="mb-6">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-3 text-left">Choose Tip Amount</span>
+                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                    {[
+                      { label: '₹20', desc: 'Chai ☕', amount: 20 },
+                      { label: '₹50', desc: 'Coffee ☕', amount: 50 },
+                      { label: '₹100', desc: 'Pro 🏏', amount: 100 },
+                      { label: '₹250', desc: 'Owner 🏆', amount: 250 },
+                      { label: '₹500', desc: 'VIP 👑', amount: 500 },
+                    ].map((item) => (
+                      <button
+                        key={item.amount}
+                        onClick={() => setSelectedTipAmount(item.amount)}
+                        className={`p-3 rounded-2xl border text-center transition-all ${
+                          selectedTipAmount === item.amount 
+                            ? 'bg-yellow-400 text-black border-yellow-400 font-black shadow-[0_0_15px_rgba(245,158,11,0.4)] scale-105' 
+                            : 'bg-white/5 border-white/10 text-slate-300 hover:border-yellow-400/50 hover:bg-yellow-400/10'
+                        }`}
+                      >
+                        <span className="block text-sm font-black">{item.label}</span>
+                        <span className="block text-[9px] uppercase tracking-wider opacity-80">{item.desc}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
-                <div className="p-8 rounded-[2.5rem] bg-yellow-400/5 border border-yellow-400/10 relative overflow-hidden">
-                  <div className="flex items-center justify-center gap-2 mb-4">
-                    <Wallet className="w-4 h-4 text-yellow-400" />
-                    <span className="text-[10px] font-black text-yellow-400 uppercase tracking-[0.2em]">Support Development</span>
-                  </div>
+                {/* Main Action Box */}
+                <div className="p-6 rounded-[2rem] bg-yellow-400/5 border border-yellow-400/20 relative overflow-hidden mb-6">
+                  {/* Tap to Pay via UPI apps */}
+                  <a 
+                    href={`upi://pay?pa=divye64@oksbi&pn=Divye%20Lalwani&am=${selectedTipAmount}&cu=INR&tn=AuctionPitch%20Support`}
+                    className="w-full py-4 rounded-2xl bg-gradient-to-r from-yellow-400 via-amber-400 to-yellow-500 text-black font-black uppercase tracking-widest text-xs sm:text-sm hover:scale-105 active:scale-95 transition-all shadow-[0_0_25px_rgba(245,158,11,0.35)] flex items-center justify-center gap-2 mb-4"
+                  >
+                    <Wallet className="w-5 h-5" />
+                    Pay ₹{selectedTipAmount} via UPI (GPay / PhonePe / Paytm)
+                  </a>
 
-                  <div className="mb-6 group">
-                    <span className="text-[10px] font-black text-white/40 uppercase block mb-2 tracking-widest">UPI ID (Tap to Pay)</span>
-                    <a 
-                      href="upi://pay?pa=divye64@oksbi&pn=Divye%20Lalwani&cu=INR"
-                      className="text-2xl font-black text-yellow-400 font-mono tracking-tight bg-yellow-400/10 py-4 px-6 rounded-2xl inline-block border border-yellow-400/20 hover:bg-yellow-400/20 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                  {/* Copy UPI ID */}
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10 mb-4">
+                    <div className="flex flex-col text-left pl-1">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">UPI ID</span>
+                      <span className="text-sm font-mono font-black text-yellow-400">divye64@oksbi</span>
+                    </div>
+                    <button
+                      onClick={copyUpiId}
+                      className="px-4 py-2 rounded-xl bg-yellow-400/20 hover:bg-yellow-400/30 text-yellow-400 font-black text-xs uppercase tracking-wider transition-all flex items-center gap-1.5"
                     >
-                      divye64@oksbi
-                    </a>
+                      {copiedUpi ? (
+                        <>
+                          <Check className="w-4 h-4 text-green-400" />
+                          <span className="text-green-400">Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-4 h-4" />
+                          <span>Copy</span>
+                        </>
+                      )}
+                    </button>
                   </div>
 
+                  {/* QR Code Toggle / Display */}
                   {!showQR ? (
                     <button 
                       onClick={() => setShowQR(true)}
-                      className="w-full py-5 rounded-2xl bg-yellow-400 text-black font-black uppercase tracking-widest text-sm hover:scale-105 transition-all shadow-[0_0_30px_rgba(245,158,11,0.3)] flex items-center justify-center gap-3"
+                      className="w-full py-3 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
                     >
-                      Scan QR to Pay
-                      <ExternalLink className="w-5 h-5" />
+                      <ExternalLink className="w-4 h-4 text-yellow-400" />
+                      Show QR Code for ₹{selectedTipAmount}
                     </button>
                   ) : (
                     <motion.div 
-                      initial={{ opacity: 0, scale: 0.9 }}
+                      initial={{ opacity: 0, scale: 0.95 }}
                       animate={{ opacity: 1, scale: 1 }}
-                      className="flex flex-col items-center gap-6 pt-4"
+                      className="flex flex-col items-center gap-4 pt-2"
                     >
-                      <div className="p-4 bg-white rounded-3xl shadow-2xl relative">
+                      <div className="p-4 bg-white rounded-2xl shadow-2xl relative">
                         <img 
-                          src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=upi://pay?pa=divye64@oksbi%26pn=Divye%20Lalwani" 
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=upi://pay?pa=divye64@oksbi%26pn=Divye%20Lalwani%26am=${selectedTipAmount}%26cu=INR%26tn=AuctionPitch%20Support`} 
                           alt="Support QR Code"
-                          className="w-48 h-48 md:w-56 md:h-56"
+                          className="w-44 h-44 sm:w-48 sm:h-48"
                         />
-                        <div className="absolute inset-0 border-8 border-white/50 rounded-3xl pointer-events-none"></div>
                       </div>
-                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                        Scan with any UPI app
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                        Scan with GPay, PhonePe, Paytm, or any banking app
                       </p>
                       <button 
                         onClick={() => setShowQR(false)}
-                        className="text-white/40 hover:text-white text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-all"
+                        className="text-slate-400 hover:text-white text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-all"
                       >
                         <ArrowLeft className="w-3 h-3" />
                         Hide QR Code
                       </button>
                     </motion.div>
                   )}
+                </div>
+
+                {/* Feedback & Community */}
+                <div className="flex items-center justify-center gap-4 pt-2 text-xs">
+                  <a 
+                    href="mailto:divye0005@gmail.com?subject=Auction Pitch Feedback / Donation"
+                    className="text-slate-400 hover:text-white transition-colors flex items-center gap-1.5 font-bold"
+                  >
+                    <Mail className="w-3.5 h-3.5 text-cyan-400" />
+                    divye0005@gmail.com
+                  </a>
+                  <span className="text-slate-600">•</span>
+                  <a 
+                    href="https://t.me/auctionpitch"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-slate-400 hover:text-blue-400 transition-colors flex items-center gap-1.5 font-bold"
+                  >
+                    <Send className="w-3.5 h-3.5 text-blue-400" />
+                    Telegram Community
+                  </a>
                 </div>
               </div>
             </motion.div>

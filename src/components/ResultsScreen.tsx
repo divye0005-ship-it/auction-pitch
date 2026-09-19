@@ -156,16 +156,23 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ room, user, allPlayers, o
         </div>
 
         {onShowSupport && (
-          <div className="md:col-span-12 flex justify-center mt-4">
+          <div className="md:col-span-12 flex flex-col sm:flex-row items-center justify-between p-6 rounded-3xl bg-gradient-to-r from-amber-500/10 via-yellow-500/10 to-orange-500/10 border border-yellow-400/30 gap-6 mt-4">
+            <div className="flex items-center gap-4 text-left">
+              <div className="w-14 h-14 rounded-2xl bg-yellow-400/20 border border-yellow-400/30 flex items-center justify-center flex-shrink-0">
+                <span className="text-2xl">☕</span>
+              </div>
+              <div>
+                <span className="text-[10px] font-black text-yellow-400 uppercase tracking-widest block">Enjoyed this IPL Auction?</span>
+                <h4 className="text-base sm:text-lg font-black text-white uppercase tracking-tight">Support Developer & Keep Servers Fast</h4>
+                <p className="text-xs text-slate-400">Tip the creator a Chai (₹20) or Coffee (₹50) via UPI to fuel new cricket updates!</p>
+              </div>
+            </div>
             <button 
               onClick={onShowSupport}
-              className="group flex items-center gap-4 bg-gradient-to-r from-cyan-500/10 to-purple-500/10 hover:from-cyan-500/20 hover:to-purple-500/20 px-8 py-4 rounded-2xl border border-cyan-500/30 transition-all"
+              className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-yellow-400 to-amber-400 text-black font-black uppercase text-xs tracking-widest hover:scale-105 active:scale-95 transition-all shadow-[0_0_25px_rgba(245,158,11,0.3)] flex items-center justify-center gap-2 flex-shrink-0"
             >
-              <TrendingUp className="w-5 h-5 text-cyan-400 group-hover:scale-110 transition-transform" />
-              <div className="text-left">
-                <span className="text-[10px] font-black text-cyan-400 uppercase tracking-widest block">Beta Feedback</span>
-                <span className="text-xs font-black text-white uppercase tracking-tight">Help us improve the game!</span>
-              </div>
+              <Wallet className="w-4 h-4" />
+              Tip / Donate UPI (₹20+)
             </button>
           </div>
         )}

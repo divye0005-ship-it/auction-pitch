@@ -65,6 +65,9 @@ let lastLeaderboardFetch = 0;
 let cachedProfile: UserProfile | null = null;
 let lastProfileFetch = 0;
 
+let cachedPublicRooms: Room[] | null = null;
+let lastPublicRoomsFetch = 0;
+
 export const dbService = {
   // User Profile
   async getUserProfile(uid: string): Promise<UserProfile | null> {
@@ -379,23 +382,30 @@ export const dbService = {
     }
   },
 
-  async getPublicRooms(): Promise<Room[]> {
+  async getPublicRooms(forceRefresh = false): Promise<Room[]> {
     try {
+      const now = Date.now();
+      if (!forceRefresh && cachedPublicRooms && now - lastPublicRoomsFetch < 8000) {
+        return cachedPublicRooms;
+      }
       const q = query(
         collection(db, 'rooms'), 
         where('isPublic', '==', true),
         where('status', '==', 'waiting'),
         orderBy('createdAt', 'desc'),
-        limit(50) // Limit to reduce quota
+        limit(30) // Limit to reduce quota
       );
       const snapshot = await getDocs(q);
-      return snapshot.docs
+      const rooms = snapshot.docs
         .map(doc => doc.data() as Room)
         .filter(room => Object.keys(room.players || {}).length > 0)
         .slice(0, 20); // Limit to top 20 visible
+      cachedPublicRooms = rooms;
+      lastPublicRoomsFetch = now;
+      return rooms;
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, 'rooms');
-      return [];
+      return cachedPublicRooms || [];
     }
   },
 

@@ -1,5 +1,6 @@
 {
   "name": "IPL 2026 Auction Pro",
-  "description": "A real-time multiplayer IPL 2026 auction simulator with live bidding, squad management, and intelligent bot play.",
-  "requestFramePermissions": []
+  "description": "The #1 real-time multiplayer IPL auction game and cricket auction simulator with live bidding, purse management, and AI bots.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

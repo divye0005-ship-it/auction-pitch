@@ -33,11 +33,15 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
 
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [isEnding, setIsEnding] = useState(false);
+  const isEndingRef = useRef(false);
   const [timeLeft, setTimeLeft] = useState(room.revealTimer);
   const [bidPulse, setBidPulse] = useState(false);
   const [showSquads, setShowSquads] = useState(false);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const botTimeoutsRef = useRef<NodeJS.Timeout[]>([]);
+  const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const currentPlayerIdRef = useRef(room.currentPlayerId);
 
   // Optimization: Create a player lookup map for O(1) access
   const playerMap = React.useMemo(() => {
@@ -46,24 +50,37 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
     return map;
   }, [allPlayers]);
 
-  // Reset isEnding when player changes
+  // Reset isEnding and clear pending bot bids when player changes
   useEffect(() => {
+    currentPlayerIdRef.current = room.currentPlayerId;
     if (!room.currentPlayerId) {
+      isEndingRef.current = false;
       setIsEnding(false);
     }
+    // Clear pending bot timeouts when player changes
+    botTimeoutsRef.current.forEach(t => clearTimeout(t));
+    botTimeoutsRef.current = [];
   }, [room.currentPlayerId]);
 
   useEffect(() => {
     const loadVoices = () => {
+      if (!window.speechSynthesis) return;
       const availableVoices = window.speechSynthesis.getVoices();
       if (availableVoices.length > 0) {
         setVoices(availableVoices);
       }
     };
     loadVoices();
-    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+    if (typeof window !== 'undefined' && window.speechSynthesis && window.speechSynthesis.onvoiceschanged !== undefined) {
       window.speechSynthesis.onvoiceschanged = loadVoices;
     }
+    return () => {
+      botTimeoutsRef.current.forEach(t => clearTimeout(t));
+      botTimeoutsRef.current = [];
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    };
   }, []);
 
   const playersArr = React.useMemo(() => Object.values(room.players) as any[], [room.players]);
@@ -88,35 +105,45 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
   const speak = React.useCallback((text: string) => {
     if (!window.speechSynthesis || isMuted) return;
     
-    // Cancel any ongoing speech to ensure the latest update is heard immediately
-    // but we'll be more selective to avoid a "glitchy" robotic sound
-    const isSoldMessage = text.toLowerCase().includes('sold') || text.toLowerCase().includes('unsold');
-    
-    if (!isSoldMessage) {
-      window.speechSynthesis.cancel();
+    try {
+      const isSoldMessage = text.toLowerCase().includes('sold') || text.toLowerCase().includes('unsold');
+      
+      if (!isSoldMessage && window.speechSynthesis.speaking) {
+        window.speechSynthesis.cancel();
+      }
+      
+      const msg = new SpeechSynthesisUtterance(text);
+      activeUtteranceRef.current = msg;
+      
+      msg.onend = () => {
+        if (activeUtteranceRef.current === msg) activeUtteranceRef.current = null;
+      };
+      msg.onerror = () => {
+        if (activeUtteranceRef.current === msg) activeUtteranceRef.current = null;
+      };
+      
+      // Prioritize high-quality Indian Female voices
+      const indianFemaleVoice = voices.find(v => 
+        (v.lang.includes('IN') || v.name.toLowerCase().includes('india')) && 
+        (v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('woman') || v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('veena')) &&
+        !v.name.toLowerCase().includes('google')
+      ) || voices.find(v => 
+        (v.lang.includes('IN') || v.name.toLowerCase().includes('india')) && 
+        (v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('woman') || v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('veena'))
+      ) || voices.find(v => v.lang.includes('en-IN')) || voices.find(v => v.lang.includes('en-GB'));
+      
+      if (indianFemaleVoice) {
+        msg.voice = indianFemaleVoice;
+      }
+      
+      msg.rate = 1.15;
+      msg.pitch = 1.05;
+      msg.volume = 1.0;
+      
+      window.speechSynthesis.speak(msg);
+    } catch (e) {
+      console.warn("Speech synthesis error bypassed:", e);
     }
-    
-    const msg = new SpeechSynthesisUtterance(text);
-    
-    // Prioritize high-quality Indian Female voices
-    const indianFemaleVoice = voices.find(v => 
-      (v.lang.includes('IN') || v.name.toLowerCase().includes('india')) && 
-      (v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('woman') || v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('veena')) &&
-      !v.name.toLowerCase().includes('google') // Prefer system voices over Google ones if possible for better quality
-    ) || voices.find(v => 
-      (v.lang.includes('IN') || v.name.toLowerCase().includes('india')) && 
-      (v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('woman') || v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('veena'))
-    ) || voices.find(v => v.lang.includes('en-IN')) || voices.find(v => v.lang.includes('en-GB'));
-    
-    if (indianFemaleVoice) {
-      msg.voice = indianFemaleVoice;
-    }
-    
-    msg.rate = 1.2; // Faster, more energetic speed
-    msg.pitch = 1.1; // Slightly higher for a more pleasant, professional tone
-    msg.volume = 1.0;
-    
-    window.speechSynthesis.speak(msg);
   }, [isMuted, voices]);
 
   // Audio announcements for bids
@@ -207,7 +234,8 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
   }, [room.timerEnd, room.hostId, user.uid, room.status, room.currentPlayerId]);
 
   const handleAuctionEnd = async () => {
-    if (isEnding || !currentPlayer || !room.currentPlayerId) return;
+    if (isEndingRef.current || !currentPlayer || !room.currentPlayerId) return;
+    isEndingRef.current = true;
     setIsEnding(true);
 
     // Use a local copy of the player ID to ensure we're ending the correct auction
@@ -226,6 +254,7 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
       await dbService.completeAuction(room.roomId, endingPlayerId, endingPlayerScore);
     } catch (error) {
       console.error("Failed to complete auction:", error);
+      isEndingRef.current = false;
       setIsEnding(false); // Reset on error to allow retry
     }
   };
@@ -378,18 +407,28 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
             if (Math.random() > 0.6) bidProbability *= 0.4;
 
             if (Math.random() < bidProbability) { 
-              setTimeout(() => {
-                // Check refs AGAIN in timeout to avoid racing bids
-                if (roomPursesRef.current[bot.uid] >= nextBid && currentBidRef.current === cBid) {
+              const timerId = setTimeout(() => {
+                // Check refs AGAIN in timeout to avoid racing bids or bidding on expired player
+                if (
+                  roomPursesRef.current[bot.uid] >= nextBid && 
+                  currentBidRef.current === cBid && 
+                  currentPlayerIdRef.current === currentPlayer.playerId &&
+                  !isEndingRef.current
+                ) {
                   dbService.bidOnPlayer(room.roomId, bot.uid, nextBid, room.revealTimer, currentPlayer.basePrice)
                     .catch(err => console.log("Bot bid failed:", err.message));
                 }
               }, botDelay);
+              botTimeoutsRef.current.push(timerId);
             }
           }
         });
       }, 1200); // Slower check to reduce DB writes
-      return () => clearInterval(botInterval);
+      return () => {
+        clearInterval(botInterval);
+        botTimeoutsRef.current.forEach(t => clearTimeout(t));
+        botTimeoutsRef.current = [];
+      };
     }
   }, [room.hostId, user.uid, currentPlayer, playersArr, room.revealTimer, room.roomId, room.status, allPlayers]);
 
