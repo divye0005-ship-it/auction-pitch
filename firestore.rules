@@ -172,6 +172,11 @@ service cloud.firestore {
       }
     }
 
+    // Health / connection test rule
+    match /test/{testId} {
+      allow read: if true;
+    }
+
     // Default deny
     match /{path=**} {
       allow read, write: if false;
