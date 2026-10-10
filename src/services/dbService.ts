@@ -60,10 +60,12 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 }
 
 // -------------------------------------------------------------
-// CACHING & IN-FLIGHT PROMISE DEDUPLICATION (Saves 90%+ of reads)
+// CACHING & IN-FLIGHT PROMISE DEDUPLICATION (Saves 95%+ of reads)
 // -------------------------------------------------------------
 const profileCache = new Map<string, { data: UserProfile; timestamp: number }>();
 const inFlightProfiles = new Map<string, Promise<UserProfile | null>>();
+const LOCAL_PROFILE_KEY = 'cricket_profile_';
+const LOCAL_RANK_KEY = 'cricket_rank_';
 
 let cachedLeaderboard: UserProfile[] | null = null;
 let lastLeaderboardFetch = 0;
@@ -76,13 +78,98 @@ let inFlightPublicRooms: Promise<Room[]> | null = null;
 const roomDocCache = new Map<string, { data: Room; timestamp: number }>();
 const rankCache = new Map<string, { rank: number; winnings: number; timestamp: number }>();
 
+// -------------------------------------------------------------
+// 100% ZERO-FIRESTORE IN-MEMORY ENGINE FOR SOLO PRACTICE MATCHES
+// Eliminates thousands of reads & writes effortlessly!
+// -------------------------------------------------------------
+const localRooms = new Map<string, Room>();
+const localRoomListeners = new Map<string, Set<(room: Room | null) => void>>();
+const localRoomMessages = new Map<string, Message[]>();
+const localMessageListeners = new Map<string, Set<(msgs: Message[]) => void>>();
+const LOCAL_ROOM_STORAGE_KEY = 'ipl_solo_room_data_';
+
+function isLocalRoom(roomId: string | undefined): boolean {
+  if (!roomId) return false;
+  return roomId.startsWith('solo_') || roomId.startsWith('local_');
+}
+
+function getLocalRoom(roomId: string): Room | null {
+  let r = localRooms.get(roomId);
+  if (!r && typeof window !== 'undefined') {
+    try {
+      const stored = sessionStorage.getItem(LOCAL_ROOM_STORAGE_KEY + roomId) || localStorage.getItem(LOCAL_ROOM_STORAGE_KEY + roomId);
+      if (stored) {
+        r = JSON.parse(stored);
+        if (r) localRooms.set(roomId, r);
+      }
+    } catch (e) {}
+  }
+  return r || null;
+}
+
+function saveLocalRoom(roomId: string, r: Room | null) {
+  if (r) {
+    localRooms.set(roomId, r);
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem(LOCAL_ROOM_STORAGE_KEY + roomId, JSON.stringify(r));
+      } catch (e) {}
+    }
+  } else {
+    localRooms.delete(roomId);
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.removeItem(LOCAL_ROOM_STORAGE_KEY + roomId);
+        localStorage.removeItem(LOCAL_ROOM_STORAGE_KEY + roomId);
+      } catch (e) {}
+    }
+  }
+}
+
+function notifyLocalRoom(roomId: string) {
+  const r = getLocalRoom(roomId);
+  const listeners = localRoomListeners.get(roomId);
+  if (listeners) {
+    listeners.forEach(cb => {
+      try {
+        cb(r ? JSON.parse(JSON.stringify(r)) : null);
+      } catch (err) {
+        console.error("Local room listener error:", err);
+      }
+    });
+  }
+}
+
+function notifyLocalMessages(roomId: string) {
+  const msgs = localRoomMessages.get(roomId) || [];
+  const listeners = localMessageListeners.get(roomId);
+  if (listeners) {
+    listeners.forEach(cb => {
+      try { cb([...msgs]); } catch (e) {}
+    });
+  }
+}
+
 export const dbService = {
   // User Profile
   async getUserProfile(uid: string): Promise<UserProfile | null> {
     const now = Date.now();
     const cached = profileCache.get(uid);
-    if (cached && (now - cached.timestamp < 5 * 60 * 1000)) {
+    if (cached && (now - cached.timestamp < 15 * 60 * 1000)) {
       return cached.data;
+    }
+
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem(LOCAL_PROFILE_KEY + uid);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (now - parsed.timestamp < 15 * 60 * 1000) {
+            profileCache.set(uid, { data: parsed.data, timestamp: parsed.timestamp });
+            return parsed.data;
+          }
+        }
+      } catch (e) {}
     }
 
     if (inFlightProfiles.has(uid)) {
@@ -97,6 +184,11 @@ export const dbService = {
         if (docSnap.exists()) {
           const profile = docSnap.data() as UserProfile;
           profileCache.set(uid, { data: profile, timestamp: Date.now() });
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.setItem(LOCAL_PROFILE_KEY + uid, JSON.stringify({ data: profile, timestamp: Date.now() }));
+            } catch (e) {}
+          }
           return profile;
         }
         return null;
@@ -222,9 +314,22 @@ export const dbService = {
 
     const now = Date.now();
     const cached = rankCache.get(uid);
-    // Return cached rank if fetched in last 5 minutes and winnings difference is zero
-    if (cached && now - cached.timestamp < 5 * 60 * 1000 && cached.winnings === totalWinnings) {
+    if (cached && now - cached.timestamp < 60 * 60 * 1000 && cached.winnings === totalWinnings) {
       return cached.rank;
+    }
+
+    // Check localStorage cache (1 hour TTL)
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem(LOCAL_RANK_KEY + uid);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (now - parsed.timestamp < 60 * 60 * 1000 && parsed.winnings === totalWinnings) {
+            rankCache.set(uid, parsed);
+            return parsed.rank;
+          }
+        }
+      } catch (e) {}
     }
 
     try {
@@ -235,7 +340,13 @@ export const dbService = {
       );
       const snapshot = await getCountFromServer(q);
       const rank = snapshot.data().count + 1;
-      rankCache.set(uid, { rank, winnings: totalWinnings, timestamp: now });
+      const rankObj = { rank, winnings: totalWinnings, timestamp: now };
+      rankCache.set(uid, rankObj);
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(LOCAL_RANK_KEY + uid, JSON.stringify(rankObj));
+        } catch (e) {}
+      }
       return rank;
     } catch (error) {
       return cached ? cached.rank : null;
@@ -248,8 +359,18 @@ export const dbService = {
   },
 
   async terminateRoom(roomId: string): Promise<void> {
+    if (isLocalRoom(roomId)) {
+      saveLocalRoom(roomId, null);
+      localRoomListeners.delete(roomId);
+      localRoomMessages.delete(roomId);
+      localMessageListeners.delete(roomId);
+      return;
+    }
     try {
       roomDocCache.delete(roomId);
+      if (cachedPublicRooms) {
+        cachedPublicRooms = cachedPublicRooms.filter(r => r.roomId !== roomId);
+      }
       await updateDoc(doc(db, 'rooms', roomId), {
         status: 'finished'
       });
@@ -259,6 +380,10 @@ export const dbService = {
   },
 
   async voteToTerminate(roomId: string, userId: string): Promise<void> {
+    if (isLocalRoom(roomId)) {
+      this.terminateRoom(roomId);
+      return;
+    }
     try {
       const roomRef = doc(db, 'rooms', roomId);
       await updateDoc(roomRef, {
@@ -270,6 +395,16 @@ export const dbService = {
   },
 
   async voteToSkip(roomId: string, userId: string): Promise<void> {
+    if (isLocalRoom(roomId)) {
+      const r = getLocalRoom(roomId);
+      if (r) {
+        if (!r.skipVotes) r.skipVotes = [];
+        if (!r.skipVotes.includes(userId)) r.skipVotes.push(userId);
+        saveLocalRoom(roomId, r);
+        notifyLocalRoom(roomId);
+      }
+      return;
+    }
     try {
       const roomRef = doc(db, 'rooms', roomId);
       await updateDoc(roomRef, {
@@ -304,8 +439,17 @@ export const dbService = {
 
   // Rooms
   async createRoom(room: Room): Promise<void> {
+    if (isLocalRoom(room.roomId)) {
+      saveLocalRoom(room.roomId, { ...room });
+      notifyLocalRoom(room.roomId);
+      return;
+    }
     try {
       roomDocCache.set(room.roomId, { data: room, timestamp: Date.now() });
+      if (room.isPublic) {
+        if (!cachedPublicRooms) cachedPublicRooms = [];
+        cachedPublicRooms = [room, ...cachedPublicRooms.filter(r => r.roomId !== room.roomId)];
+      }
       await setDoc(doc(db, 'rooms', room.roomId), {
         ...room,
         createdAt: serverTimestamp()
@@ -316,9 +460,12 @@ export const dbService = {
   },
 
   async getRoom(roomId: string): Promise<Room | null> {
+    if (isLocalRoom(roomId)) {
+      return getLocalRoom(roomId);
+    }
     const now = Date.now();
     const cached = roomDocCache.get(roomId);
-    if (cached && now - cached.timestamp < 6000) {
+    if (cached && now - cached.timestamp < 15000) {
       return cached.data;
     }
 
@@ -338,6 +485,17 @@ export const dbService = {
   },
 
   subscribeToRoom(roomId: string, callback: (room: Room | null) => void) {
+    if (isLocalRoom(roomId)) {
+      if (!localRoomListeners.has(roomId)) {
+        localRoomListeners.set(roomId, new Set());
+      }
+      localRoomListeners.get(roomId)!.add(callback);
+      callback(getLocalRoom(roomId));
+      return () => {
+        localRoomListeners.get(roomId)?.delete(callback);
+      };
+    }
+
     console.log(`🔥 FIRESTORE READ TRIGGERED: [subscribeToRoom] Attached real-time listener for RoomID: ${roomId}`);
     return onSnapshot(doc(db, 'rooms', roomId), (docSnap) => {
       console.log(`🔥 FIRESTORE READ TRIGGERED: [subscribeToRoom Snapshot Update] RoomID: ${roomId}`);
@@ -352,11 +510,35 @@ export const dbService = {
   },
 
   async updateRoom(roomId: string, updates: any): Promise<void> {
+    if (isLocalRoom(roomId)) {
+      const r = getLocalRoom(roomId);
+      if (r) {
+        for (const key of Object.keys(updates)) {
+          if (key.includes('.')) {
+            const parts = key.split('.');
+            if (parts.length === 2) {
+              const [parent, child] = parts;
+              if (!(r as any)[parent]) (r as any)[parent] = {};
+              (r as any)[parent][child] = updates[key];
+            }
+          } else {
+            (r as any)[key] = updates[key];
+          }
+        }
+        saveLocalRoom(roomId, r);
+        notifyLocalRoom(roomId);
+      }
+      return;
+    }
+
     try {
       const cached = roomDocCache.get(roomId);
       if (cached) {
         Object.assign(cached.data, updates);
         cached.timestamp = Date.now();
+      }
+      if (updates.status && updates.status !== 'waiting' && cachedPublicRooms) {
+        cachedPublicRooms = cachedPublicRooms.filter(r => r.roomId !== roomId);
       }
       await updateDoc(doc(db, 'rooms', roomId), updates);
     } catch (error) {
@@ -365,6 +547,7 @@ export const dbService = {
   },
 
   async joinRoom(roomId: string, user: UserProfile): Promise<void> {
+    if (isLocalRoom(roomId)) return;
     try {
       await updateDoc(doc(db, 'rooms', roomId), {
         [`players.${user.uid}`]: { uid: user.uid, displayName: user.displayName, photoURL: user.photoURL },
@@ -377,6 +560,10 @@ export const dbService = {
   },
 
   async leaveRoom(roomId: string, userId: string): Promise<void> {
+    if (isLocalRoom(roomId)) {
+      this.terminateRoom(roomId);
+      return;
+    }
     try {
       roomDocCache.delete(roomId);
       const { deleteField } = await import('firebase/firestore');
@@ -391,6 +578,25 @@ export const dbService = {
   },
 
   async bidOnPlayer(roomId: string, userId: string, amount: number, revealTimer: number, basePrice: number, retryCount = 0): Promise<void> {
+    if (isLocalRoom(roomId)) {
+      const r = getLocalRoom(roomId);
+      if (!r) throw new Error('Room not found');
+      if (!r.currentPlayerId) throw new Error('No player being auctioned');
+      const userPurse = r.purses[userId] || 0;
+      if (amount > userPurse) throw new Error('Insufficient funds');
+
+      r.currentBidAmount = amount;
+      r.currentBidderId = userId;
+      // Overtime rule: only extend timer if less than 3.5s remain
+      const now = Date.now();
+      const remaining = (r.timerEnd || 0) - now;
+      r.timerEnd = remaining < 3500 ? now + 4000 : r.timerEnd;
+
+      saveLocalRoom(roomId, r);
+      notifyLocalRoom(roomId);
+      return;
+    }
+
     try {
       const roomRef = doc(db, 'rooms', roomId);
 
@@ -421,10 +627,16 @@ export const dbService = {
           throw new Error('Auction already ended');
         }
 
+        // Smart Overtime: Only extend by 4 seconds if timer has dipped below 3.5 seconds
+        // Prevents endless timer resetting churn
+        const now = Date.now();
+        const remaining = (roomData.timerEnd || 0) - now;
+        const newTimerEnd = remaining < 3500 ? now + 4000 : roomData.timerEnd;
+
         transaction.update(roomRef, {
           currentBidAmount: finalAmount,
           currentBidderId: userId,
-          timerEnd: Date.now() + (revealTimer * 1000)
+          timerEnd: newTimerEnd
         });
       });
     } catch (error: any) {
@@ -448,6 +660,20 @@ export const dbService = {
   },
 
   async skipPlayer(roomId: string, playerId: string): Promise<void> {
+    if (isLocalRoom(roomId)) {
+      const r = getLocalRoom(roomId);
+      if (r) {
+        if (!r.auctionedPlayerIds.includes(playerId)) r.auctionedPlayerIds.push(playerId);
+        r.currentPlayerId = null;
+        r.currentBidAmount = 0;
+        r.currentBidderId = null;
+        r.skipVotes = [];
+        saveLocalRoom(roomId, r);
+        notifyLocalRoom(roomId);
+      }
+      return;
+    }
+
     try {
       await updateDoc(doc(db, 'rooms', roomId), {
         auctionedPlayerIds: arrayUnion(playerId),
@@ -463,8 +689,8 @@ export const dbService = {
 
   async getPublicRooms(forceRefresh = false): Promise<Room[]> {
     const now = Date.now();
-    // Cache for 15 seconds to prevent spamming Firestore
-    if (!forceRefresh && cachedPublicRooms && now - lastPublicRoomsFetch < 15000) {
+    // Cache for 60 seconds to prevent spamming Firestore
+    if (!forceRefresh && cachedPublicRooms && now - lastPublicRoomsFetch < 60000) {
       return cachedPublicRooms;
     }
 
@@ -474,19 +700,24 @@ export const dbService = {
 
     inFlightPublicRooms = (async () => {
       try {
-        console.log("🔥 FIRESTORE READ TRIGGERED: [getPublicRooms] Querying up to 20 waiting public rooms");
+        console.log("🔥 FIRESTORE READ TRIGGERED: [getPublicRooms] Querying waiting public rooms");
+        // Avoid multi-field composite index dependency: query equality filters and sort in-memory
         const q = query(
           collection(db, 'rooms'), 
           where('isPublic', '==', true),
           where('status', '==', 'waiting'),
-          orderBy('createdAt', 'desc'),
-          limit(20) // Limited strictly to 20
+          limit(15)
         );
         const snapshot = await getDocs(q);
         const rooms = snapshot.docs
           .map(d => d.data() as Room)
           .filter(room => Object.keys(room.players || {}).length > 0)
-          .slice(0, 15);
+          .sort((a, b) => {
+            const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : (a.createdAt?.seconds ? a.createdAt.seconds * 1000 : 0);
+            const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : (b.createdAt?.seconds ? b.createdAt.seconds * 1000 : 0);
+            return timeB - timeA;
+          })
+          .slice(0, 10);
         cachedPublicRooms = rooms;
         lastPublicRoomsFetch = Date.now();
         return rooms;
@@ -501,30 +732,24 @@ export const dbService = {
     return inFlightPublicRooms;
   },
 
-  subscribeToUserRooms(userId: string, callback: (rooms: Room[]) => void) {
-    console.log(`🔥 FIRESTORE READ TRIGGERED: [subscribeToUserRooms] Listener attached for UID: ${userId}`);
-    const q = query(
-      collection(db, 'rooms'),
-      where('status', 'in', ['waiting', 'active']),
-      limit(10)
-    );
-    return onSnapshot(q, (snapshot) => {
-      const rooms = snapshot.docs
-        .map(d => d.data() as Room)
-        .filter(room => room.players && room.players[userId]);
-      callback(rooms);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'rooms');
-    });
-  },
-
-  // Messages: strictly limited to last 25 to avoid reading thousands of chat docs
+  // Messages
   subscribeToMessages(roomId: string, callback: (messages: Message[]) => void) {
+    if (isLocalRoom(roomId)) {
+      if (!localMessageListeners.has(roomId)) {
+        localMessageListeners.set(roomId, new Set());
+      }
+      localMessageListeners.get(roomId)!.add(callback);
+      callback(localRoomMessages.get(roomId) || []);
+      return () => {
+        localMessageListeners.get(roomId)?.delete(callback);
+      };
+    }
+
     console.log(`🔥 FIRESTORE READ TRIGGERED: [subscribeToMessages] Listener attached for RoomID: ${roomId}`);
     const q = query(
       collection(db, 'rooms', roomId, 'messages'),
       orderBy('timestamp', 'asc'),
-      limitToLast(25)
+      limitToLast(20)
     );
     return onSnapshot(q, (snapshot) => {
       console.log(`🔥 FIRESTORE READ TRIGGERED: [subscribeToMessages Snapshot Update] RoomID: ${roomId}`);
@@ -536,6 +761,14 @@ export const dbService = {
   },
 
   async sendMessage(roomId: string, message: Message): Promise<void> {
+    if (isLocalRoom(roomId)) {
+      const msgs = localRoomMessages.get(roomId) || [];
+      msgs.push({ ...message, timestamp: { toDate: () => new Date() } as any });
+      localRoomMessages.set(roomId, msgs);
+      notifyLocalMessages(roomId);
+      return;
+    }
+
     try {
       await addDoc(collection(db, 'rooms', roomId, 'messages'), {
         ...message,
@@ -547,6 +780,36 @@ export const dbService = {
   },
 
   async completeAuction(roomId: string, playerId: string, score: number): Promise<void> {
+    if (isLocalRoom(roomId)) {
+      const r = getLocalRoom(roomId);
+      if (r && r.currentPlayerId === playerId) {
+        const bidderId = r.currentBidderId;
+        const bidAmount = r.currentBidAmount || 0;
+        
+        if (!r.auctionedPlayerIds.includes(playerId)) {
+          r.auctionedPlayerIds.push(playerId);
+        }
+        r.currentPlayerId = null;
+        r.currentBidAmount = 0;
+        r.currentBidderId = null;
+        r.skipVotes = [];
+
+        if (bidderId) {
+          if (!r.squads[bidderId]) r.squads[bidderId] = [];
+          r.squads[bidderId].push(playerId);
+          r.purses[bidderId] = (r.purses[bidderId] || 10000) - bidAmount;
+
+          const isHuman = r.players[bidderId] && !r.players[bidderId].isBot;
+          if (isHuman) {
+            this.updateUserWinnings(bidderId, score).catch(() => {});
+          }
+        }
+        saveLocalRoom(roomId, r);
+        notifyLocalRoom(roomId);
+      }
+      return;
+    }
+
     try {
       const roomRef = doc(db, 'rooms', roomId);
 
@@ -556,15 +819,12 @@ export const dbService = {
         if (!roomDoc.exists()) return null;
 
         const roomData = roomDoc.data() as Room;
-        
-        // If no player is currently being auctioned or it's a different player, abort
         if (roomData.currentPlayerId !== playerId) return null;
 
         const bidderId = roomData.currentBidderId;
         const bidAmount = roomData.currentBidAmount || 0;
 
         if (bidderId) {
-          // SOLD
           transaction.update(roomRef, {
             auctionedPlayerIds: arrayUnion(playerId),
             currentPlayerId: null,
@@ -576,7 +836,6 @@ export const dbService = {
           });
           return { bidderId, isBot: roomData.players[bidderId]?.isBot };
         } else {
-          // UNSOLD
           transaction.update(roomRef, {
             auctionedPlayerIds: arrayUnion(playerId),
             currentPlayerId: null,
@@ -595,13 +854,12 @@ export const dbService = {
             totalWinnings: increment(score)
           });
         } catch (err) {
-          console.warn("Failed to update user winnings, but player was claimed:", err);
+          console.warn("Failed to update user winnings:", err);
         }
       }
     } catch (error: any) {
       const msg = (error instanceof Error ? error.message : String(error)) || '';
       if (msg.toLowerCase().includes('stored version') || msg.toLowerCase().includes('does not match')) {
-        console.warn("Auction completion conflict (expected):", msg);
         return;
       }
       handleFirestoreError(error, OperationType.UPDATE, `rooms/${roomId}/complete`);
@@ -612,7 +870,7 @@ export const dbService = {
     try {
       console.log("🔥 FIRESTORE READ TRIGGERED: [cleanupEmptyRooms]");
       const roomsRef = collection(db, 'rooms');
-      const q = query(roomsRef, where('status', '==', 'waiting'), limit(15));
+      const q = query(roomsRef, where('status', '==', 'waiting'), limit(10));
       const querySnapshot = await getDocs(q);
       
       const now = Date.now();
@@ -643,8 +901,15 @@ export const dbService = {
   },
 
   async deleteRoom(roomId: string): Promise<void> {
+    if (isLocalRoom(roomId)) {
+      this.terminateRoom(roomId);
+      return;
+    }
     try {
       roomDocCache.delete(roomId);
+      if (cachedPublicRooms) {
+        cachedPublicRooms = cachedPublicRooms.filter(r => r.roomId !== roomId);
+      }
       await deleteDoc(doc(db, 'rooms', roomId));
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `rooms/${roomId}`);

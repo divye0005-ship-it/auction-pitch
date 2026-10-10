@@ -229,11 +229,11 @@ export default function App() {
             localStorage.removeItem('activeRoomId');
           }
         }
-        
-        // Visual fallback: only fetch 1 public room if no resumable room exists
-        const pubRooms = await dbService.getPublicRooms();
-        if (pubRooms.length > 0) {
-          setLatestPublicRoom(pubRooms[0]);
+        // Discover latest waiting public room (uses 60s cache, quota-safe)
+        const publicRoomsList = await dbService.getPublicRooms();
+        if (publicRoomsList && publicRoomsList.length > 0) {
+          const availableRoom = publicRoomsList.find(r => r.hostId !== user.uid && Object.keys(r.players || {}).length < r.playersCount);
+          setLatestPublicRoom(availableRoom || publicRoomsList[0] || null);
         } else {
           setLatestPublicRoom(null);
         }
@@ -300,6 +300,11 @@ export default function App() {
 
     const cleanupStaleRooms = async () => {
       try {
+        // Run stale cleanup at most once every 24 hours per user to avoid quota consumption
+        const lastCleanup = localStorage.getItem('last_stale_cleanup');
+        if (lastCleanup && Date.now() - parseInt(lastCleanup, 10) < 24 * 60 * 60 * 1000) return;
+        localStorage.setItem('last_stale_cleanup', Date.now().toString());
+
         const querySnapshot = await getDocs(query(
           collection(db, 'rooms'),
           where('status', '==', 'active'),
@@ -452,7 +457,7 @@ export default function App() {
     }
     setIsCreating(true);
     try {
-      const roomId = generateRoomId();
+      const roomId = `solo_${generateRoomId()}`;
       
       // Solo mode: 1 human + 1 bot (total 2 players)
       const players: any = { [user.uid]: { uid: user.uid, displayName: user.displayName, photoURL: user.photoURL } };
@@ -1328,7 +1333,7 @@ export default function App() {
                       ) : (
                         <Plus className="w-6 h-6" />
                       )}
-                      {isCreating ? 'Launching...' : 'Create Multiplayer Room'}
+                      {isCreating ? 'Launching...' : createOptions.isPublic ? 'Create Public Room' : 'Create Private Room'}
                     </button>
                     
                     <div className="relative">
@@ -1345,8 +1350,6 @@ export default function App() {
                         )}
                         {isCreating ? 'Starting...' : 'Play Solo'}
                       </button>
-                      
-
                     </div>
                   </div>
                 </div>
@@ -1354,8 +1357,17 @@ export default function App() {
                 {/* Join Room Card */}
                 <div className="md:col-span-5 bento-item glass-dark flex flex-col justify-between">
                   <div>
-                    <h2 className="text-4xl font-black uppercase tracking-tighter mb-10 font-display">Join Room</h2>
-                    <p className="text-slate-500 text-sm font-bold mb-8">Got a code? Enter it below to jump into the action.</p>
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-4xl font-black uppercase tracking-tighter font-display">Join Room</h2>
+                      <button 
+                        onClick={() => setCurrentView('rooms')}
+                        className="px-3.5 py-2 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-2 border border-purple-500/20"
+                      >
+                        <Users className="w-3.5 h-3.5" />
+                        Public Rooms
+                      </button>
+                    </div>
+                    <p className="text-slate-500 text-sm font-bold mb-8">Got a code? Enter it below or browse public games.</p>
                   </div>
                   
                   <div className="space-y-4">
