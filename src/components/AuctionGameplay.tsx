@@ -263,8 +263,15 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
     }
 
     try {
-      // Call transaction-based completion method
-      await dbService.completeAuction(room.roomId, endingPlayerId, endingPlayerScore);
+      // Call direct completion method with zero document reads!
+      await dbService.completeAuction(
+        room.roomId, 
+        endingPlayerId, 
+        endingPlayerScore, 
+        endingBidderId, 
+        endingBidAmount, 
+        Boolean(buyer?.isBot)
+      );
     } catch (error) {
       console.error("Failed to complete auction:", error);
     }
@@ -381,7 +388,7 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
   // Dynamic Bot AI: Responsive and competitive for solo practice, quota-safe in multiplayer
   useEffect(() => {
     if (room.hostId === user.uid && room.status === 'active' && currentPlayer) {
-      const isSolo = room.roomId.startsWith('solo_') || room.roomId.startsWith('local_');
+      const isSolo = room.roomId.startsWith('solo_') || room.roomId.startsWith('local_') || playersArr.filter(p => !p.isBot).length <= 1;
       const botInterval = setInterval(() => {
         const botPlayers = botPlayersRef.current;
         if (!botPlayers || botPlayers.length === 0) return;

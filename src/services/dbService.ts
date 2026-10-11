@@ -79,7 +79,41 @@ const roomDocCache = new Map<string, { data: Room; timestamp: number }>();
 const rankCache = new Map<string, { rank: number; winnings: number; timestamp: number }>();
 
 // -------------------------------------------------------------
-// 100% ZERO-FIRESTORE IN-MEMORY ENGINE FOR SOLO PRACTICE MATCHES
+// CIRCUIT BREAKER: Stops runaway reads and endless reconnection storms
+// If Firestore quota is hit, gracefully switch to 100% offline-safe mode
+// -------------------------------------------------------------
+const CIRCUIT_BREAKER_KEY = 'ipl_fs_circuit_breaker_active';
+const CIRCUIT_BREAKER_TIMESTAMP = 'ipl_fs_circuit_breaker_time';
+
+export function isCircuitBreakerActive(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const active = sessionStorage.getItem(CIRCUIT_BREAKER_KEY);
+    if (!active) return false;
+    const time = parseInt(sessionStorage.getItem(CIRCUIT_BREAKER_TIMESTAMP) || '0', 10);
+    // Auto-reset after 1 hour to test if quota has reset
+    if (Date.now() - time > 60 * 60 * 1000) {
+      sessionStorage.removeItem(CIRCUIT_BREAKER_KEY);
+      sessionStorage.removeItem(CIRCUIT_BREAKER_TIMESTAMP);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+export function tripCircuitBreaker(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.setItem(CIRCUIT_BREAKER_KEY, 'true');
+    sessionStorage.setItem(CIRCUIT_BREAKER_TIMESTAMP, Date.now().toString());
+    console.warn('⚠️ [Circuit Breaker Tripped] Firestore read quota hit or exhausted. Diverting all operations to zero-read offline engine.');
+  } catch (e) {}
+}
+
+// -------------------------------------------------------------
+// 100% ZERO-FIRESTORE IN-MEMORY ENGINE FOR SOLO & BOT MATCHES
 // Eliminates thousands of reads & writes effortlessly!
 // -------------------------------------------------------------
 const localRooms = new Map<string, Room>();
@@ -90,7 +124,17 @@ const LOCAL_ROOM_STORAGE_KEY = 'ipl_solo_room_data_';
 
 function isLocalRoom(roomId: string | undefined): boolean {
   if (!roomId) return false;
-  return roomId.startsWith('solo_') || roomId.startsWith('local_');
+  if (roomId.startsWith('solo_') || roomId.startsWith('local_')) return true;
+  if (localRooms.has(roomId)) return true;
+  if (isCircuitBreakerActive()) return true;
+  if (typeof window !== 'undefined') {
+    try {
+      if (sessionStorage.getItem(LOCAL_ROOM_STORAGE_KEY + roomId) || localStorage.getItem(LOCAL_ROOM_STORAGE_KEY + roomId)) {
+        return true;
+      }
+    } catch (e) {}
+  }
+  return false;
 }
 
 function getLocalRoom(roomId: string): Room | null {
@@ -151,11 +195,36 @@ function notifyLocalMessages(roomId: string) {
 }
 
 export const dbService = {
+  // Promote room to 100% local in-memory (Zero reads / writes for games with only bots)
+  makeRoomLocal(roomId: string): Room | null {
+    let r = localRooms.get(roomId) || roomDocCache.get(roomId)?.data;
+    if (!r && typeof window !== 'undefined') {
+      try {
+        const stored = sessionStorage.getItem(LOCAL_ROOM_STORAGE_KEY + roomId);
+        if (stored) r = JSON.parse(stored);
+      } catch (e) {}
+    }
+    if (r) {
+      r.status = 'active';
+      saveLocalRoom(roomId, r);
+      if (cachedPublicRooms) {
+        cachedPublicRooms = cachedPublicRooms.filter(pr => pr.roomId !== roomId);
+      }
+      // Clean up Firestore doc in background to avoid leftover waiting rooms
+      if (!roomId.startsWith('solo_') && !roomId.startsWith('local_')) {
+        updateDoc(doc(db, 'rooms', roomId), { status: 'finished' }).catch(() => {});
+      }
+      notifyLocalRoom(roomId);
+      return r;
+    }
+    return null;
+  },
+
   // User Profile
   async getUserProfile(uid: string): Promise<UserProfile | null> {
     const now = Date.now();
     const cached = profileCache.get(uid);
-    if (cached && (now - cached.timestamp < 15 * 60 * 1000)) {
+    if (cached && (now - cached.timestamp < 30 * 60 * 1000)) {
       return cached.data;
     }
 
@@ -164,12 +233,17 @@ export const dbService = {
         const stored = localStorage.getItem(LOCAL_PROFILE_KEY + uid);
         if (stored) {
           const parsed = JSON.parse(stored);
-          if (now - parsed.timestamp < 15 * 60 * 1000) {
+          if (now - parsed.timestamp < 24 * 60 * 60 * 1000) {
             profileCache.set(uid, { data: parsed.data, timestamp: parsed.timestamp });
             return parsed.data;
           }
         }
       } catch (e) {}
+    }
+
+    if (isCircuitBreakerActive()) {
+      if (cached) return cached.data;
+      return null;
     }
 
     if (inFlightProfiles.has(uid)) {
@@ -192,8 +266,20 @@ export const dbService = {
           return profile;
         }
         return null;
-      } catch (error) {
-        handleFirestoreError(error, OperationType.GET, `users/${uid}`);
+      } catch (error: any) {
+        const msg = String(error?.message || error);
+        if (msg.includes('Quota') || msg.includes('RESOURCE_EXHAUSTED')) {
+          tripCircuitBreaker();
+        }
+        if (typeof window !== 'undefined') {
+          try {
+            const stored = localStorage.getItem(LOCAL_PROFILE_KEY + uid);
+            if (stored) {
+              const parsed = JSON.parse(stored);
+              return parsed.data as UserProfile;
+            }
+          } catch (e) {}
+        }
         return null;
       } finally {
         inFlightProfiles.delete(uid);
@@ -207,13 +293,25 @@ export const dbService = {
   async createUserProfile(profile: UserProfile): Promise<void> {
     try {
       profileCache.set(profile.uid, { data: profile, timestamp: Date.now() });
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(LOCAL_PROFILE_KEY + profile.uid, JSON.stringify({ data: profile, timestamp: Date.now() }));
+        } catch (e) {}
+      }
+      if (isCircuitBreakerActive()) return;
+
       await setDoc(doc(db, 'users', profile.uid), {
         ...profile,
         totalWinnings: profile.totalWinnings || 0,
         createdAt: serverTimestamp()
       });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, `users/${profile.uid}`);
+    } catch (error: any) {
+      const msg = String(error?.message || error);
+      if (msg.includes('Quota') || msg.includes('RESOURCE_EXHAUSTED')) {
+        tripCircuitBreaker();
+        return;
+      }
+      console.warn("Create user profile warning:", error);
     }
   },
 
@@ -223,12 +321,24 @@ export const dbService = {
       if (cached) {
         cached.data.totalWinnings = (cached.data.totalWinnings || 0) + score;
         cached.timestamp = Date.now();
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem(LOCAL_PROFILE_KEY + uid, JSON.stringify({ data: cached.data, timestamp: Date.now() }));
+          } catch (e) {}
+        }
       }
+      if (isCircuitBreakerActive()) return;
+
       await updateDoc(doc(db, 'users', uid), {
         totalWinnings: increment(score)
       });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `users/${uid}`);
+    } catch (error: any) {
+      const msg = String(error?.message || error);
+      if (msg.includes('Quota') || msg.includes('RESOURCE_EXHAUSTED')) {
+        tripCircuitBreaker();
+        return;
+      }
+      console.warn("Update user winnings warning:", error);
     }
   },
 
@@ -261,9 +371,27 @@ export const dbService = {
 
   async getLeaderboard(forceRefresh = false): Promise<UserProfile[]> {
     const now = Date.now();
-    // Cache for 3 minutes to preserve quota unless explicitly requested after cooldown
-    if (!forceRefresh && cachedLeaderboard && now - lastLeaderboardFetch < 3 * 60 * 1000) {
+    // Cache for 10 minutes to preserve quota unless explicitly requested after cooldown
+    if (!forceRefresh && cachedLeaderboard && now - lastLeaderboardFetch < 10 * 60 * 1000) {
       return cachedLeaderboard;
+    }
+
+    if (!forceRefresh && typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('ipl_leaderboard_cache');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (now - parsed.timestamp < 60 * 60 * 1000) {
+            cachedLeaderboard = parsed.data;
+            lastLeaderboardFetch = parsed.timestamp;
+            return parsed.data;
+          }
+        }
+      } catch (e) {}
+    }
+
+    if (isCircuitBreakerActive()) {
+      return cachedLeaderboard || [];
     }
 
     if (inFlightLeaderboard) {
@@ -286,9 +414,17 @@ export const dbService = {
           
         cachedLeaderboard = results;
         lastLeaderboardFetch = Date.now();
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('ipl_leaderboard_cache', JSON.stringify({ data: results, timestamp: Date.now() }));
+          } catch (e) {}
+        }
         return results;
-      } catch (error) {
-        handleFirestoreError(error, OperationType.LIST, 'users');
+      } catch (error: any) {
+        const msg = String(error?.message || error);
+        if (msg.includes('Quota') || msg.includes('RESOURCE_EXHAUSTED')) {
+          tripCircuitBreaker();
+        }
         return cachedLeaderboard || [];
       } finally {
         inFlightLeaderboard = null;
@@ -318,18 +454,22 @@ export const dbService = {
       return cached.rank;
     }
 
-    // Check localStorage cache (1 hour TTL)
+    // Check localStorage cache (24 hours TTL)
     if (typeof window !== 'undefined') {
       try {
         const stored = localStorage.getItem(LOCAL_RANK_KEY + uid);
         if (stored) {
           const parsed = JSON.parse(stored);
-          if (now - parsed.timestamp < 60 * 60 * 1000 && parsed.winnings === totalWinnings) {
+          if (now - parsed.timestamp < 24 * 60 * 60 * 1000 && parsed.winnings === totalWinnings) {
             rankCache.set(uid, parsed);
             return parsed.rank;
           }
         }
       } catch (e) {}
+    }
+
+    if (isCircuitBreakerActive()) {
+      return cached ? cached.rank : null;
     }
 
     try {
@@ -348,7 +488,11 @@ export const dbService = {
         } catch (e) {}
       }
       return rank;
-    } catch (error) {
+    } catch (error: any) {
+      const msg = String(error?.message || error);
+      if (msg.includes('Quota') || msg.includes('RESOURCE_EXHAUSTED')) {
+        tripCircuitBreaker();
+      }
       return cached ? cached.rank : null;
     }
   },
@@ -485,28 +629,46 @@ export const dbService = {
   },
 
   subscribeToRoom(roomId: string, callback: (room: Room | null) => void) {
-    if (isLocalRoom(roomId)) {
+    if (isLocalRoom(roomId) || isCircuitBreakerActive()) {
       if (!localRoomListeners.has(roomId)) {
         localRoomListeners.set(roomId, new Set());
       }
       localRoomListeners.get(roomId)!.add(callback);
-      callback(getLocalRoom(roomId));
+      const local = getLocalRoom(roomId) || roomDocCache.get(roomId)?.data || null;
+      callback(local);
       return () => {
         localRoomListeners.get(roomId)?.delete(callback);
       };
     }
 
-    console.log(`🔥 FIRESTORE READ TRIGGERED: [subscribeToRoom] Attached real-time listener for RoomID: ${roomId}`);
-    return onSnapshot(doc(db, 'rooms', roomId), (docSnap) => {
-      console.log(`🔥 FIRESTORE READ TRIGGERED: [subscribeToRoom Snapshot Update] RoomID: ${roomId}`);
-      const data = docSnap.exists() ? (docSnap.data() as Room) : null;
-      if (data) {
-        roomDocCache.set(roomId, { data, timestamp: Date.now() });
-      }
-      callback(data);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, `rooms/${roomId}`);
-    });
+    try {
+      console.log(`🔥 FIRESTORE READ TRIGGERED: [subscribeToRoom] Attached real-time listener for RoomID: ${roomId}`);
+      return onSnapshot(doc(db, 'rooms', roomId), (docSnap) => {
+        console.log(`🔥 FIRESTORE READ TRIGGERED: [subscribeToRoom Snapshot Update] RoomID: ${roomId}`);
+        const data = docSnap.exists() ? (docSnap.data() as Room) : null;
+        if (data) {
+          roomDocCache.set(roomId, { data, timestamp: Date.now() });
+        }
+        callback(data);
+      }, (error) => {
+        const msg = String(error?.message || error);
+        if (msg.includes('Quota') || msg.includes('RESOURCE_EXHAUSTED')) {
+          tripCircuitBreaker();
+          const cached = roomDocCache.get(roomId)?.data || null;
+          if (cached) {
+            saveLocalRoom(roomId, cached);
+            callback(cached);
+          }
+          return;
+        }
+        console.warn("Room listener error:", error);
+      });
+    } catch (e) {
+      tripCircuitBreaker();
+      const cached = roomDocCache.get(roomId)?.data || null;
+      callback(cached);
+      return () => {};
+    }
   },
 
   async updateRoom(roomId: string, updates: any): Promise<void> {
@@ -604,59 +766,28 @@ export const dbService = {
 
     try {
       const roomRef = doc(db, 'rooms', roomId);
+      const cached = roomDocCache.get(roomId)?.data;
+      const now = Date.now();
 
-      await runTransaction(db, async (transaction) => {
-        console.log(`🔥 FIRESTORE READ TRIGGERED: [bidOnPlayer] Transaction read for RoomID: ${roomId}`);
-        const roomDoc = await transaction.get(roomRef);
-        if (!roomDoc.exists()) throw new Error('Room not found');
+      // Check timer expiration from cached room snapshot
+      if (cached?.timerEnd && now >= cached.timerEnd) {
+        throw new Error('Auction already ended');
+      }
 
-        const roomData = roomDoc.data() as Room;
-        
-        // Basic validations
-        if (!roomData.currentPlayerId) throw new Error('No player being auctioned');
-        
-        // Strictly reject bids if the auction timer has reached 0
-        const now = Date.now();
-        if (roomData.timerEnd && now >= roomData.timerEnd) {
-          throw new Error('Auction already ended');
-        }
+      const remaining = (cached?.timerEnd || 0) - now;
+      const newTimerEnd = (remaining > 0 && remaining < 3500) ? now + 4000 : (cached?.timerEnd || now + 10000);
 
-        const currentBid = roomData.currentBidAmount || 0;
-        let finalAmount = amount;
-        
-        // If the bid is too low (someone else bid just before us), 
-        // calculate the next valid bid based on the ACTUAL current bid in the DB
-        if (finalAmount <= currentBid) {
-          finalAmount = getNextBidAmount(currentBid, basePrice);
-        }
-        
-        const userPurse = roomData.purses[userId] || 0;
-        if (finalAmount > userPurse) throw new Error('Insufficient funds');
-
-        // Smart Overtime: Only extend by 4 seconds if timer is active and has dipped below 3.5 seconds
-        const remaining = (roomData.timerEnd || 0) - now;
-        const newTimerEnd = (remaining > 0 && remaining < 3500) ? now + 4000 : roomData.timerEnd;
-
-        transaction.update(roomRef, {
-          currentBidAmount: finalAmount,
-          currentBidderId: userId,
-          timerEnd: newTimerEnd
-        });
+      // Direct write (0 document reads incurred!)
+      await updateDoc(roomRef, {
+        currentBidAmount: amount,
+        currentBidderId: userId,
+        timerEnd: newTimerEnd
       });
     } catch (error: any) {
       const msg = (error instanceof Error ? error.message : String(error)) || '';
-      const isContention = msg.toLowerCase().includes('stored version') || msg.toLowerCase().includes('does not match');
       const businessLogicErrors = ['Bid too low', 'Insufficient funds', 'Auction already ended', 'Room not found', 'No player being auctioned'];
       
-      if (isContention && retryCount < 2) {
-        await new Promise(r => setTimeout(r, 60 + Math.random() * 80));
-        return this.bidOnPlayer(roomId, userId, amount, revealTimer, basePrice, retryCount + 1);
-      }
-
-      if (businessLogicErrors.includes(error.message) || isContention) {
-        if (isContention) {
-          throw new Error('Someone else bid just before you! Please try again.');
-        }
+      if (businessLogicErrors.includes(error.message)) {
         throw error;
       }
       handleFirestoreError(error, OperationType.UPDATE, `rooms/${roomId}/bid`);
@@ -693,9 +824,13 @@ export const dbService = {
 
   async getPublicRooms(forceRefresh = false): Promise<Room[]> {
     const now = Date.now();
-    // Cache for 60 seconds to prevent spamming Firestore
-    if (!forceRefresh && cachedPublicRooms && now - lastPublicRoomsFetch < 60000) {
+    // Cache for 2 minutes to prevent spamming Firestore
+    if (!forceRefresh && cachedPublicRooms && now - lastPublicRoomsFetch < 2 * 60 * 1000) {
       return cachedPublicRooms;
+    }
+
+    if (isCircuitBreakerActive()) {
+      return cachedPublicRooms || [];
     }
 
     if (inFlightPublicRooms) {
@@ -710,7 +845,7 @@ export const dbService = {
           collection(db, 'rooms'), 
           where('isPublic', '==', true),
           where('status', '==', 'waiting'),
-          limit(15)
+          limit(10)
         );
         const snapshot = await getDocs(q);
         const rooms = snapshot.docs
@@ -725,8 +860,11 @@ export const dbService = {
         cachedPublicRooms = rooms;
         lastPublicRoomsFetch = Date.now();
         return rooms;
-      } catch (error) {
-        handleFirestoreError(error, OperationType.LIST, 'rooms');
+      } catch (error: any) {
+        const msg = String(error?.message || error);
+        if (msg.includes('Quota') || msg.includes('RESOURCE_EXHAUSTED')) {
+          tripCircuitBreaker();
+        }
         return cachedPublicRooms || [];
       } finally {
         inFlightPublicRooms = null;
@@ -738,7 +876,7 @@ export const dbService = {
 
   // Messages
   subscribeToMessages(roomId: string, callback: (messages: Message[]) => void) {
-    if (isLocalRoom(roomId)) {
+    if (isLocalRoom(roomId) || isCircuitBreakerActive()) {
       if (!localMessageListeners.has(roomId)) {
         localMessageListeners.set(roomId, new Set());
       }
@@ -749,19 +887,31 @@ export const dbService = {
       };
     }
 
-    console.log(`🔥 FIRESTORE READ TRIGGERED: [subscribeToMessages] Listener attached for RoomID: ${roomId}`);
-    const q = query(
-      collection(db, 'rooms', roomId, 'messages'),
-      orderBy('timestamp', 'asc'),
-      limitToLast(20)
-    );
-    return onSnapshot(q, (snapshot) => {
-      console.log(`🔥 FIRESTORE READ TRIGGERED: [subscribeToMessages Snapshot Update] RoomID: ${roomId}`);
-      const messages = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Message));
-      callback(messages);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, `rooms/${roomId}/messages`);
-    });
+    try {
+      console.log(`🔥 FIRESTORE READ TRIGGERED: [subscribeToMessages] Listener attached for RoomID: ${roomId}`);
+      const q = query(
+        collection(db, 'rooms', roomId, 'messages'),
+        orderBy('timestamp', 'asc'),
+        limitToLast(20)
+      );
+      return onSnapshot(q, (snapshot) => {
+        console.log(`🔥 FIRESTORE READ TRIGGERED: [subscribeToMessages Snapshot Update] RoomID: ${roomId}`);
+        const messages = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Message));
+        callback(messages);
+      }, (error) => {
+        const msg = String(error?.message || error);
+        if (msg.includes('Quota') || msg.includes('RESOURCE_EXHAUSTED')) {
+          tripCircuitBreaker();
+          callback(localRoomMessages.get(roomId) || []);
+          return;
+        }
+        console.warn("Message listener error:", error);
+      });
+    } catch (e) {
+      tripCircuitBreaker();
+      callback([]);
+      return () => {};
+    }
   },
 
   async sendMessage(roomId: string, message: Message): Promise<void> {
@@ -783,12 +933,12 @@ export const dbService = {
     }
   },
 
-  async completeAuction(roomId: string, playerId: string, score: number): Promise<void> {
+  async completeAuction(roomId: string, playerId: string, score: number, winnerId?: string | null, bidAmount?: number, isBot?: boolean): Promise<void> {
     if (isLocalRoom(roomId)) {
       const r = getLocalRoom(roomId);
       if (r && r.currentPlayerId === playerId) {
-        const bidderId = r.currentBidderId;
-        const bidAmount = r.currentBidAmount || 0;
+        const bidderId = winnerId !== undefined ? winnerId : r.currentBidderId;
+        const finalBidAmount = bidAmount !== undefined ? bidAmount : (r.currentBidAmount || 0);
         
         if (!r.auctionedPlayerIds.includes(playerId)) {
           r.auctionedPlayerIds.push(playerId);
@@ -801,7 +951,7 @@ export const dbService = {
         if (bidderId) {
           if (!r.squads[bidderId]) r.squads[bidderId] = [];
           r.squads[bidderId].push(playerId);
-          r.purses[bidderId] = (r.purses[bidderId] || 10000) - bidAmount;
+          r.purses[bidderId] = (r.purses[bidderId] || 10000) - finalBidAmount;
 
           const isHuman = r.players[bidderId] && !r.players[bidderId].isBot;
           if (isHuman) {
@@ -816,44 +966,30 @@ export const dbService = {
 
     try {
       const roomRef = doc(db, 'rooms', roomId);
+      const cached = roomDocCache.get(roomId)?.data;
+      const bidderId = winnerId !== undefined ? winnerId : cached?.currentBidderId;
+      const finalBidAmount = bidAmount !== undefined ? bidAmount : (cached?.currentBidAmount || 0);
+      const isWinnerBot = isBot !== undefined ? isBot : Boolean(bidderId && cached?.players[bidderId]?.isBot);
 
-      const winnerInfo = await runTransaction(db, async (transaction) => {
-        console.log(`🔥 FIRESTORE READ TRIGGERED: [completeAuction] Transaction read for RoomID: ${roomId}`);
-        const roomDoc = await transaction.get(roomRef);
-        if (!roomDoc.exists()) return null;
+      const updates: any = {
+        auctionedPlayerIds: arrayUnion(playerId),
+        currentPlayerId: null,
+        currentBidAmount: 0,
+        currentBidderId: null,
+        skipVotes: []
+      };
 
-        const roomData = roomDoc.data() as Room;
-        if (roomData.currentPlayerId !== playerId) return null;
+      if (bidderId && finalBidAmount > 0) {
+        updates[`squads.${bidderId}`] = arrayUnion(playerId);
+        updates[`purses.${bidderId}`] = increment(-finalBidAmount);
+      }
 
-        const bidderId = roomData.currentBidderId;
-        const bidAmount = roomData.currentBidAmount || 0;
+      // Direct write (0 document reads incurred!)
+      await updateDoc(roomRef, updates);
 
-        if (bidderId) {
-          transaction.update(roomRef, {
-            auctionedPlayerIds: arrayUnion(playerId),
-            currentPlayerId: null,
-            [`squads.${bidderId}`]: arrayUnion(playerId),
-            [`purses.${bidderId}`]: increment(-bidAmount),
-            currentBidAmount: 0,
-            currentBidderId: null,
-            skipVotes: []
-          });
-          return { bidderId, isBot: roomData.players[bidderId]?.isBot };
-        } else {
-          transaction.update(roomRef, {
-            auctionedPlayerIds: arrayUnion(playerId),
-            currentPlayerId: null,
-            currentBidAmount: 0,
-            currentBidderId: null,
-            skipVotes: []
-          });
-          return null;
-        }
-      });
-
-      if (winnerInfo && !winnerInfo.isBot) {
+      if (bidderId && !isWinnerBot) {
         try {
-          const userRef = doc(db, 'users', winnerInfo.bidderId);
+          const userRef = doc(db, 'users', bidderId);
           await updateDoc(userRef, {
             totalWinnings: increment(score)
           });
@@ -863,9 +999,6 @@ export const dbService = {
       }
     } catch (error: any) {
       const msg = (error instanceof Error ? error.message : String(error)) || '';
-      if (msg.toLowerCase().includes('stored version') || msg.toLowerCase().includes('does not match')) {
-        return;
-      }
       handleFirestoreError(error, OperationType.UPDATE, `rooms/${roomId}/complete`);
     }
   },

@@ -29,7 +29,14 @@ const RoomLobby: React.FC<RoomLobbyProps> = ({ room, user, onLeave, onShowSuppor
       alert("Need at least 2 players!");
       return;
     }
-    await dbService.updateRoom(room.roomId, { status: 'active' });
+    const humanCount = playersArr.filter(p => !p.isBot).length;
+    if (humanCount === 1) {
+      // ONLY 1 HUMAN PLAYER: Host playing with bots!
+      // Promote room to 100% Zero-Read/Write local engine!
+      dbService.makeRoomLocal(room.roomId);
+    } else {
+      await dbService.updateRoom(room.roomId, { status: 'active' });
+    }
   };
 
   const addBot = async () => {

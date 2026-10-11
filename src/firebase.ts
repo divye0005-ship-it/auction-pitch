@@ -36,20 +36,6 @@ export const db = initializeFirestore(app, {
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
-// Test connection strictly once per browser session
-async function testConnection() {
-  if (typeof window !== 'undefined' && sessionStorage.getItem('firestore_tested')) return;
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-    if (typeof window !== 'undefined') sessionStorage.setItem('firestore_tested', 'true');
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn("Firestore operating in offline mode or waiting for connection.");
-    }
-  }
-}
-testConnection();
-
 export { 
   signInWithPopup, 
   signOut, 

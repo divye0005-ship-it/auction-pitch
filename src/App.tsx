@@ -190,13 +190,18 @@ export default function App() {
             setUserRank(rank);
           }
         } catch (error: any) {
-          const errorMsg = error instanceof Error ? error.message : String(error);
-          if (errorMsg.includes('Quota')) {
-            setLoginError('Service temporarily unavailable due to high traffic reaching database limits. Please try again tomorrow when quotas reset.');
-          } else {
-            console.error('Auth state change error:', error);
-            setLoginError('Failed to load user profile. Please check your internet connection.');
-          }
+          console.warn('Auth state fallback:', error);
+          // Zero-downtime offline fallback: never lock the user out!
+          const fallbackProfile: UserProfile = {
+            uid: firebaseUser.uid,
+            displayName: firebaseUser.isAnonymous ? `Guest_${firebaseUser.uid.substring(0, 4)}` : (firebaseUser.displayName || 'Player'),
+            photoURL: firebaseUser.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${firebaseUser.uid}`,
+            email: firebaseUser.email || '',
+            role: firebaseUser.isAnonymous ? 'guest' : 'user',
+            totalWinnings: 0,
+            createdAt: null
+          };
+          setUser(fallbackProfile);
         }
       } else {
         setUser(null);
