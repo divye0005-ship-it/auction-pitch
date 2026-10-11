@@ -582,15 +582,20 @@ export const dbService = {
       const r = getLocalRoom(roomId);
       if (!r) throw new Error('Room not found');
       if (!r.currentPlayerId) throw new Error('No player being auctioned');
+      const now = Date.now();
+      if (r.timerEnd && now >= r.timerEnd) {
+        throw new Error('Auction already ended');
+      }
       const userPurse = r.purses[userId] || 0;
       if (amount > userPurse) throw new Error('Insufficient funds');
 
       r.currentBidAmount = amount;
       r.currentBidderId = userId;
-      // Overtime rule: only extend timer if less than 3.5s remain
-      const now = Date.now();
+      // Overtime rule: only extend timer by 4s if auction is active and less than 3.5s remain
       const remaining = (r.timerEnd || 0) - now;
-      r.timerEnd = remaining < 3500 ? now + 4000 : r.timerEnd;
+      if (remaining > 0 && remaining < 3500) {
+        r.timerEnd = now + 4000;
+      }
 
       saveLocalRoom(roomId, r);
       notifyLocalRoom(roomId);
@@ -610,6 +615,12 @@ export const dbService = {
         // Basic validations
         if (!roomData.currentPlayerId) throw new Error('No player being auctioned');
         
+        // Strictly reject bids if the auction timer has reached 0
+        const now = Date.now();
+        if (roomData.timerEnd && now >= roomData.timerEnd) {
+          throw new Error('Auction already ended');
+        }
+
         const currentBid = roomData.currentBidAmount || 0;
         let finalAmount = amount;
         
@@ -622,16 +633,9 @@ export const dbService = {
         const userPurse = roomData.purses[userId] || 0;
         if (finalAmount > userPurse) throw new Error('Insufficient funds');
 
-        // Check if timer has expired (with 5s grace period for client clock difference)
-        if (roomData.timerEnd && Date.now() > roomData.timerEnd + 5000) {
-          throw new Error('Auction already ended');
-        }
-
-        // Smart Overtime: Only extend by 4 seconds if timer has dipped below 3.5 seconds
-        // Prevents endless timer resetting churn
-        const now = Date.now();
+        // Smart Overtime: Only extend by 4 seconds if timer is active and has dipped below 3.5 seconds
         const remaining = (roomData.timerEnd || 0) - now;
-        const newTimerEnd = remaining < 3500 ? now + 4000 : roomData.timerEnd;
+        const newTimerEnd = (remaining > 0 && remaining < 3500) ? now + 4000 : roomData.timerEnd;
 
         transaction.update(roomRef, {
           currentBidAmount: finalAmount,

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Room, Player, UserProfile } from '../types';
 import { dbService } from '../services/dbService';
-import AuctionCard from './AuctionCard';
+import AuctionCard, { SoldStatus } from './AuctionCard';
 import { getNextBidAmount } from '../lib/auctionUtils';
 import { Zap, Plus, Timer as TimerIcon, Wallet, Users, SkipForward, Trophy, TrendingUp, Volume2, VolumeX } from 'lucide-react';
 
@@ -34,6 +34,7 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [isEnding, setIsEnding] = useState(false);
   const isEndingRef = useRef(false);
+  const [soldStatus, setSoldStatus] = useState<SoldStatus | null>(null);
   const [timeLeft, setTimeLeft] = useState(room.revealTimer);
   const [bidPulse, setBidPulse] = useState(false);
   const [showSquads, setShowSquads] = useState(false);
@@ -50,11 +51,12 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
     return map;
   }, [allPlayers]);
 
-  // Reset isEnding and clear pending bot bids when player changes
+  // Reset isEnding, soldStatus and clear pending bot bids when player changes
   useEffect(() => {
     currentPlayerIdRef.current = room.currentPlayerId;
     isEndingRef.current = false;
     setIsEnding(false);
+    setSoldStatus(null);
     // Clear pending bot timeouts when player changes
     botTimeoutsRef.current.forEach(t => clearTimeout(t));
     botTimeoutsRef.current = [];
@@ -165,11 +167,12 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
     }
   }, [isMuted]);
 
-  // Select next player if none active - strictly host only
+  // Select next player if none active - with celebration buffer and non-host fallback
   useEffect(() => {
     if (room.status === 'active' && !room.currentPlayerId) {
       const isHost = room.hostId === user.uid;
-      if (!isHost) return; // ONLY the host selects the next player
+      // Host triggers next player after 1.2s celebration buffer; non-host fallback after 3s
+      const delayMs = isHost ? 1200 : 3200;
       
       const timeoutId = setTimeout(() => {
         const availablePlayers = allPlayers.filter(p => !room.auctionedPlayerIds.includes(p.playerId));
@@ -184,8 +187,8 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
           currentBidderId: null,
           timerEnd: Date.now() + (room.revealTimer * 1000),
           skipVotes: []
-        }).catch(err => console.log('Next player selection race condition handled:', err.message));
-      }, 300);
+        }).catch(err => console.log('Next player selection handled:', err.message));
+      }, delayMs);
       
       return () => clearTimeout(timeoutId);
     }
@@ -197,65 +200,91 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
       const p = playerMap.get(room.currentPlayerId);
       if (p && p.playerId !== currentPlayer?.playerId) {
         setCurrentPlayer(p);
+        setSoldStatus(null);
         // Immediate announcement
         speak(`Next player: ${p.name}. Base price: ${p.basePrice >= 100 ? (p.basePrice/100).toFixed(2) + ' Crore' : p.basePrice + ' Lakhs'}`);
       }
     }
   }, [room.currentPlayerId, playerMap, currentPlayer, speak]);
 
-  // Timer logic
+  // Crisp timer logic with zero delay upon completion
   useEffect(() => {
-    if (room.timerEnd && room.status === 'active') {
+    if (room.timerEnd && room.status === 'active' && room.currentPlayerId) {
       const updateTimer = () => {
         const now = Date.now();
         const diff = Math.max(0, Math.ceil((room.timerEnd! - now) / 1000));
         setTimeLeft(diff);
 
-        // ONLY the host triggers the end of the auction (prevents multi-client collision)
-        const isHost = room.hostId === user.uid;
-        if (isHost && now > room.timerEnd! + 1200) {
-          if (room.currentPlayerId) {
+        // Instantly trigger auction end when timer hits 0
+        if (now >= room.timerEnd! || diff === 0) {
+          if (!isEndingRef.current) {
             handleAuctionEnd();
           }
         }
       };
 
       updateTimer();
-      const interval = setInterval(updateTimer, 500);
+      const interval = setInterval(updateTimer, 100);
       return () => clearInterval(interval);
     }
-  }, [room.timerEnd, room.hostId, user.uid, room.status, room.currentPlayerId]);
+  }, [room.timerEnd, room.hostId, user.uid, room.status, room.currentPlayerId, currentPlayer, currentBidderId, currentBid]);
 
   const handleAuctionEnd = async () => {
     if (isEndingRef.current || !currentPlayer || !room.currentPlayerId) return;
     isEndingRef.current = true;
     setIsEnding(true);
 
-    // Use a local copy of the player ID to ensure we're ending the correct auction
+    // Cancel all scheduled bot bids immediately!
+    botTimeoutsRef.current.forEach(t => clearTimeout(t));
+    botTimeoutsRef.current = [];
+
     const endingPlayerId = room.currentPlayerId;
     const endingPlayerScore = currentPlayer.auctionScore;
+    const endingBidAmount = currentBid;
+    const endingBidderId = currentBidderId;
+    const buyer = endingBidderId ? room.players[endingBidderId] : null;
+    const buyerName = buyer?.displayName || (endingBidderId ? "Winner" : null);
+
+    // Instant visual & speech hammer down announcement
+    if (endingBidderId && buyerName) {
+      setSoldStatus({
+        isSold: true,
+        isUnsold: false,
+        winnerName: buyerName,
+        amount: endingBidAmount
+      });
+      speak(`${currentPlayer.name} sold to ${buyerName} for ${endingBidAmount >= 100 ? (endingBidAmount/100).toFixed(2) + ' Crore' : endingBidAmount + ' Lakhs'}!`);
+    } else {
+      setSoldStatus({
+        isSold: false,
+        isUnsold: true
+      });
+      speak(`${currentPlayer.name} remained unsold!`);
+    }
 
     try {
-      if (currentBidderId) {
-        const buyerName = room.players[currentBidderId]?.displayName || "Someone";
-        speak(`${currentPlayer.name} sold to ${buyerName} for ${currentBid >= 100 ? (currentBid/100).toFixed(2) + ' Crore' : currentBid + ' Lakhs'}`);
-      } else {
-        speak(`${currentPlayer.name} remained unsold`);
-      }
-
-      // Call the transaction-based completion method
+      // Call transaction-based completion method
       await dbService.completeAuction(room.roomId, endingPlayerId, endingPlayerScore);
     } catch (error) {
       console.error("Failed to complete auction:", error);
-      isEndingRef.current = false;
-      setIsEnding(false); // Reset on error to allow retry
     }
   };
 
   const isBiddingRef = React.useRef(false);
 
   const handleBid = async () => {
-    if (!currentPlayer || currentBidderId === user.uid || isBiddingRef.current) return;
+    if (
+      !currentPlayer || 
+      currentBidderId === user.uid || 
+      isBiddingRef.current || 
+      timeLeft <= 0 || 
+      isEndingRef.current || 
+      isEnding || 
+      Boolean(soldStatus) ||
+      (room.timerEnd && Date.now() >= room.timerEnd)
+    ) {
+      return;
+    }
     isBiddingRef.current = true;
     setTimeout(() => { isBiddingRef.current = false; }, 400);
     
@@ -279,7 +308,7 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
     const originalRoom = { ...room };
     const now = Date.now();
     const remaining = (room.timerEnd || 0) - now;
-    const optimisticTimerEnd = remaining < 3500 ? now + 4000 : room.timerEnd;
+    const optimisticTimerEnd = (remaining > 0 && remaining < 3500) ? now + 4000 : room.timerEnd;
     setRoom({
       ...room,
       currentBidAmount: nextBid,
@@ -361,6 +390,10 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
         const cBid = currentBidRef.current;
         const cBidderId = currentBidderIdRef.current;
 
+        // Never bid if timer expired, auction ending, or no active player
+        if (tLeft <= 0 || isEndingRef.current || isEnding || !room.currentPlayerId) return;
+        if (room.timerEnd && Date.now() >= room.timerEnd) return;
+
         // Candidate selection: Find the bot with the highest bidding motivation
         let bestCandidate: { bot: any; nextBid: number; probability: number; delay: number } | null = null;
 
@@ -418,12 +451,17 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
 
         if (bestCandidate && Math.random() < bestCandidate.probability) {
           const { bot, nextBid, delay } = bestCandidate;
+          const timeUntilEnd = (room.timerEnd || 0) - Date.now();
+          if (timeUntilEnd <= 400 || delay >= timeUntilEnd) return;
+
           const timerId = setTimeout(() => {
             if (
               roomPursesRef.current[bot.uid] >= nextBid && 
               currentBidRef.current === cBid && 
               currentPlayerIdRef.current === currentPlayer.playerId &&
-              !isEndingRef.current
+              !isEndingRef.current &&
+              timeLeftRef.current > 0 &&
+              (!room.timerEnd || Date.now() < room.timerEnd)
             ) {
               botBidsCountRef.current[bot.uid] = (botBidsCountRef.current[bot.uid] || 0) + 1;
               dbService.bidOnPlayer(room.roomId, bot.uid, nextBid, room.revealTimer, currentPlayer.basePrice)
@@ -440,7 +478,7 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
         botTimeoutsRef.current = [];
       };
     }
-  }, [room.hostId, user.uid, currentPlayer?.playerId, room.revealTimer, room.roomId, room.status]);
+  }, [room.hostId, user.uid, currentPlayer?.playerId, room.revealTimer, room.roomId, room.status, isEnding]);
 
   const timerPercentage = (timeLeft / room.revealTimer) * 100;
 
@@ -460,6 +498,7 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
             <AuctionCard 
               player={currentPlayer} 
               isRevealed={true} 
+              soldStatus={soldStatus}
             />
             
             {/* Timer Ring */}
@@ -505,11 +544,15 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
               <button 
                 id="tour-bid-button-mobile"
                 onClick={handleBid}
-                disabled={currentBidderId === user.uid || myPurse < getNextBidAmount(currentBid, currentPlayer?.basePrice || 50)}
-                className={`w-full py-5 rounded-2xl bg-gradient-to-r from-cyan-400 to-purple-600 text-white font-black text-lg tracking-widest uppercase flex items-center justify-center gap-3 shadow-2xl active:scale-[0.98] disabled:opacity-50 disabled:grayscale transition-all ${currentBidderId === user.uid ? 'cursor-not-allowed' : ''}`}
+                disabled={currentBidderId === user.uid || timeLeft <= 0 || isEnding || Boolean(soldStatus) || myPurse < getNextBidAmount(currentBid, currentPlayer?.basePrice || 50)}
+                className={`w-full py-5 rounded-2xl bg-gradient-to-r from-cyan-400 to-purple-600 text-white font-black text-lg tracking-widest uppercase flex items-center justify-center gap-3 shadow-2xl active:scale-[0.98] disabled:opacity-50 disabled:grayscale transition-all ${currentBidderId === user.uid || timeLeft <= 0 || isEnding || Boolean(soldStatus) ? 'cursor-not-allowed' : ''}`}
               >
                 <Plus className="w-6 h-6" />
-                {currentBidderId === user.uid ? 'Waiting...' : `Bid ₹${getNextBidAmount(currentBid, currentPlayer?.basePrice || 50)}L`}
+                {soldStatus?.isSold ? 'Player Sold!' : 
+                 soldStatus?.isUnsold ? 'Unsold' :
+                 timeLeft <= 0 || isEnding ? 'Hammer Down...' :
+                 currentBidderId === user.uid ? 'Leading Bid' : 
+                 `Bid ₹${getNextBidAmount(currentBid, currentPlayer?.basePrice || 50)}L`}
               </button>
 
             </div>
@@ -572,14 +615,14 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
             <div className="bento-item glass-dark flex flex-col justify-between p-6">
                   <div className="flex items-center justify-between mb-6 md:mb-8">
                     <div className="flex flex-col">
-                      <span className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1">Your Purse</span>
+                      <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Your Purse</span>
                       <div className="flex items-center gap-2 text-xl md:text-2xl font-black font-mono text-green-400">
                         <Wallet className="w-4 h-4 md:w-5 md:h-5" />
                         ₹{(myPurse / 100).toFixed(2)} Cr
                       </div>
                     </div>
                     <div className="flex flex-col items-end">
-                      <span className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1">Squad</span>
+                      <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Squad</span>
                       <div className={`text-lg md:text-xl font-black font-mono ${(room.squads[user.uid]?.length || 0) < 11 ? 'text-orange-400' : 'text-cyan-400'}`}>
                         {room.squads[user.uid]?.length || 0}/25
                       </div>
@@ -591,11 +634,15 @@ const AuctionGameplay: React.FC<AuctionGameplayProps> = ({
                 <button 
                   id="tour-bid-button-desktop"
                   onClick={handleBid}
-                  disabled={currentBidderId === user.uid || myPurse < getNextBidAmount(currentBid, currentPlayer?.basePrice || 50)}
-                  className={`hidden lg:flex w-full py-5 md:py-6 rounded-[1.5rem] bg-gradient-to-r from-cyan-400 to-purple-600 text-white font-black text-lg md:text-xl tracking-widest uppercase items-center justify-center gap-3 md:gap-4 shadow-2xl hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:grayscale transition-all ${currentBidderId === user.uid ? 'cursor-not-allowed' : ''}`}
+                  disabled={currentBidderId === user.uid || timeLeft <= 0 || isEnding || Boolean(soldStatus) || myPurse < getNextBidAmount(currentBid, currentPlayer?.basePrice || 50)}
+                  className={`hidden lg:flex w-full py-5 md:py-6 rounded-[1.5rem] bg-gradient-to-r from-cyan-400 to-purple-600 text-white font-black text-lg md:text-xl tracking-widest uppercase items-center justify-center gap-3 md:gap-4 shadow-2xl hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:grayscale transition-all ${currentBidderId === user.uid || timeLeft <= 0 || isEnding || Boolean(soldStatus) ? 'cursor-not-allowed' : ''}`}
                 >
                   <Plus className="w-6 h-6 md:w-8 md:h-8" />
-                  {currentBidderId === user.uid ? 'Waiting...' : `Bid ₹${getNextBidAmount(currentBid, currentPlayer?.basePrice || 50)}L`}
+                  {soldStatus?.isSold ? 'Player Sold!' : 
+                   soldStatus?.isUnsold ? 'Unsold' :
+                   timeLeft <= 0 || isEnding ? 'Hammer Down...' :
+                   currentBidderId === user.uid ? 'Leading Bid' : 
+                   `Bid ₹${getNextBidAmount(currentBid, currentPlayer?.basePrice || 50)}L`}
                 </button>
 
               </div>

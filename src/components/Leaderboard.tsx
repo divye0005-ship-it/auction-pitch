@@ -111,7 +111,7 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ onBack, currentUser, currentU
                 <span className="text-sm font-bold text-white">{currentUser.displayName}</span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-black uppercase">You</span>
               </div>
-              <span className="text-xs text-slate-400">Keep winning auctions to enter the Top 20!</span>
+              <span className="text-xs text-slate-400">Keep winning auctions to earn points and enter the Top 20!</span>
             </div>
           </div>
           <div className="text-right">
@@ -181,9 +181,9 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ onBack, currentUser, currentU
                   </div>
                 </div>
                 <div className="flex flex-col items-end">
-                  <span className="text-[8px] md:text-[10px] font-black text-cyan-400 uppercase tracking-widest mb-0.5">Winnings</span>
+                  <span className="text-[8px] md:text-[10px] font-black text-cyan-400 uppercase tracking-widest mb-0.5">Auction Points</span>
                   <span className="text-lg md:text-2xl font-black font-display text-white">
-                    ₹{(user.totalWinnings || 0).toLocaleString('en-IN')} L
+                    {(user.totalWinnings || 0).toLocaleString('en-IN')} <span className="text-xs md:text-sm font-sans font-bold text-cyan-400">PTS</span>
                   </span>
                 </div>
               </motion.div>

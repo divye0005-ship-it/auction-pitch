@@ -1,16 +1,43 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { User, Zap, Target, TrendingUp, Trophy } from 'lucide-react';
+import { User, Zap, Target, TrendingUp, Trophy, CheckCircle, XCircle } from 'lucide-react';
 import { Player } from '../types';
+
+export interface SoldStatus {
+  isSold: boolean;
+  isUnsold: boolean;
+  winnerName?: string;
+  amount?: number;
+}
 
 interface AuctionCardProps {
   player: Player | null;
   isRevealed: boolean;
   onReveal?: () => void;
+  soldStatus?: SoldStatus | null;
 }
 
-const AuctionCard: React.FC<AuctionCardProps> = ({ player, isRevealed }) => {
-  if (!player) return null;
+const AuctionCard: React.FC<AuctionCardProps> = ({ player, isRevealed, soldStatus }) => {
+  if (!player) {
+    return (
+      <div className="w-full max-w-sm mx-auto perspective-1000 relative">
+        <div className="w-full aspect-[3/4] rounded-[2.5rem] p-1 bg-gradient-to-br from-cyan-500/20 via-purple-500/10 to-slate-800/30 border border-white/10 shadow-2xl">
+          <div className="w-full h-full rounded-[2.3rem] bg-[#050505] flex flex-col items-center justify-center p-8 text-center relative overflow-hidden">
+            <div className="absolute inset-0 bg-radial from-cyan-500/10 to-transparent blur-xl pointer-events-none"></div>
+            <div className="w-20 h-20 rounded-full border-4 border-cyan-400 border-t-transparent animate-spin mb-6 flex items-center justify-center">
+              <Trophy className="w-8 h-8 text-cyan-400" />
+            </div>
+            <h3 className="text-xl md:text-2xl font-black uppercase tracking-tight font-display text-white mb-2">
+              Next Player Entering
+            </h3>
+            <p className="text-xs text-slate-400 uppercase tracking-widest font-mono">
+              Preparing next auction lot...
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const getGlowClass = (score: number) => {
     if (score >= 900) return 'shadow-[0_0_40px_rgba(255,215,0,0.3)] border-yellow-500/50';
@@ -36,7 +63,7 @@ const AuctionCard: React.FC<AuctionCardProps> = ({ player, isRevealed }) => {
         initial={{ rotateY: -90, opacity: 0 }}
         animate={{ rotateY: 0, opacity: 1 }}
         transition={{ duration: 0.6, type: "spring", damping: 12 }}
-        className={`w-full aspect-[3/4] rounded-[2.5rem] p-1 bg-gradient-to-br ${getTierColor(player.auctionScore)} ${getGlowClass(player.auctionScore)}`}
+        className={`w-full aspect-[3/4] rounded-[2.5rem] p-1 bg-gradient-to-br ${getTierColor(player.auctionScore)} ${getGlowClass(player.auctionScore)} relative overflow-hidden`}
       >
         <div className="w-full h-full rounded-[2.3rem] bg-[#050505] overflow-hidden relative flex flex-col">
           {/* Player Image Header */}
@@ -55,6 +82,62 @@ const AuctionCard: React.FC<AuctionCardProps> = ({ player, isRevealed }) => {
               <span className="text-sm md:text-xl font-black font-mono">{player.auctionScore}</span>
             </div>
           </div>
+
+          {/* Instant Sold / Unsold Hammer Stamp Overlay */}
+          <AnimatePresence>
+            {soldStatus?.isSold && (
+              <motion.div 
+                key="sold-overlay"
+                initial={{ scale: 2.2, opacity: 0, rotate: -18 }}
+                animate={{ scale: 1, opacity: 1, rotate: -8 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                transition={{ type: "spring", stiffness: 350, damping: 15 }}
+                className="absolute inset-0 z-40 bg-black/75 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center"
+              >
+                <div className="px-6 py-4 rounded-3xl border-4 border-green-400 bg-gradient-to-b from-green-500/30 to-green-950/60 shadow-[0_0_50px_rgba(74,222,128,0.5)] transform -rotate-3 flex flex-col items-center">
+                  <div className="flex items-center gap-2 mb-1">
+                    <CheckCircle className="w-6 h-6 text-green-400 animate-pulse" />
+                    <span className="text-4xl md:text-5xl font-black font-display tracking-widest text-green-400 uppercase drop-shadow-[0_0_20px_rgba(74,222,128,0.8)]">
+                      SOLD!
+                    </span>
+                  </div>
+                  {soldStatus.winnerName && (
+                    <span className="text-sm md:text-base font-black text-white uppercase tracking-wider mt-1">
+                      Winner: <span className="text-cyan-300">{soldStatus.winnerName}</span>
+                    </span>
+                  )}
+                  {soldStatus.amount ? (
+                    <span className="text-base md:text-lg font-black font-mono text-yellow-300 mt-1">
+                      ₹{soldStatus.amount >= 100 ? (soldStatus.amount / 100).toFixed(2) + ' Crore' : soldStatus.amount + ' Lakhs'}
+                    </span>
+                  ) : null}
+                </div>
+              </motion.div>
+            )}
+
+            {soldStatus?.isUnsold && (
+              <motion.div 
+                key="unsold-overlay"
+                initial={{ scale: 2.2, opacity: 0, rotate: 18 }}
+                animate={{ scale: 1, opacity: 1, rotate: 6 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                transition={{ type: "spring", stiffness: 350, damping: 15 }}
+                className="absolute inset-0 z-40 bg-black/75 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center"
+              >
+                <div className="px-6 py-4 rounded-3xl border-4 border-red-500 bg-gradient-to-b from-red-500/30 to-red-950/60 shadow-[0_0_50px_rgba(239,68,68,0.5)] transform rotate-2 flex flex-col items-center">
+                  <div className="flex items-center gap-2 mb-1">
+                    <XCircle className="w-6 h-6 text-red-500" />
+                    <span className="text-4xl md:text-5xl font-black font-display tracking-widest text-red-500 uppercase drop-shadow-[0_0_20px_rgba(239,68,68,0.8)]">
+                      UNSOLD
+                    </span>
+                  </div>
+                  <span className="text-xs md:text-sm font-bold text-slate-300 uppercase tracking-widest mt-1">
+                    No Bids Received
+                  </span>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Player Info */}
           <div className="flex-1 p-8 flex flex-col justify-between">

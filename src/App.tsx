@@ -1033,8 +1033,8 @@ export default function App() {
 
                     <div className="grid grid-cols-2 gap-6 w-full">
                       <div className="p-8 rounded-3xl bg-white/5 border border-white/10 flex flex-col items-center">
-                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Total Winnings</span>
-                        <div className="text-5xl font-black font-display text-cyan-400">{user.totalWinnings || 0}</div>
+                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Total Points</span>
+                        <div className="text-5xl font-black font-display text-cyan-400">{user.totalWinnings || 0} <span className="text-xl font-bold font-sans">PTS</span></div>
                         <span className="text-[9px] font-bold text-cyan-500/50 uppercase mt-2">Points Earned</span>
                       </div>
                       <div className="p-8 rounded-3xl bg-white/5 border border-white/10 flex flex-col items-center">
